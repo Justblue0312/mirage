@@ -445,17 +445,9 @@ users, err = repo.QueryWithCache(ctx, "users:active", 5*time.Minute,
 safe := mirage.QuoteIdentifier("users")
 ```
 
-### Raw SQL with Struct Scanning
+### Raw SQL
 
 ```go
-// Query single row into struct
-var user User
-err := db.QueryStruct(ctx, &user, "SELECT * FROM users WHERE id = $1", 42)
-
-// Query multiple rows into slice
-var users []User
-err := db.QueryStructs(ctx, &users, "SELECT * FROM users WHERE active = $1", true)
-
 // Query boolean
 ok, err := db.QueryBoolean(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)", "alice@example.com")
 
@@ -464,6 +456,8 @@ rows, err := db.Query(ctx, "SELECT * FROM users WHERE id = $1", 42)
 defer rows.Close()
 row := db.QueryRow(ctx, "SELECT count(*) FROM users")
 ```
+
+For typed row scanning, use the Repository methods `Query` and `QuerySingle` which scan rows into `[]*T` and `*T` respectively.
 
 ### Transactions
 

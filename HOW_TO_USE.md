@@ -549,8 +549,7 @@ err := db.PrepareListenTable(ctx, &mirage.ListenTableOptions{
 ### Error Handling
 
 ```go
-var user User
-err := db.SelectByID(ctx, &user, 999)
+found, err := repo.SelectByID(ctx, 999)
 
 if mirage.IsErrNoRows(err) {
     // User not found
