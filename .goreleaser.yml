@@ -1,0 +1,51 @@
+# GoReleaser configuration for the `mirage` CLI.
+# Docs: https://goreleaser.com/customization/
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mirage
+    main: ./cmd/mirage
+    binary: mirage
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: mirage-archive
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^docs:"
+
+release:
+  # Prerelease tags (e.g. v0.4.0-rc1) are marked as GitHub prereleases
+  # automatically; stable tags become full releases.
+  prerelease: auto

@@ -1,0 +1,670 @@
+package mirage
+
+import (
+	"context"
+	"fmt"
+	"math/rand"
+	"reflect"
+	"time"
+
+	schemapkg "github.com/justblue/mirage/internal/schema"
+)
+
+// Repository provides type-safe CRUD operations for a single table mapped
+// to the struct type T. T must be a struct with db:"..." tags.
+//
+// Example:
+//
+//	type User struct {
+//	    ID   int64  `db:"pk,type:bigserial"`
+//	    Name string `db:"type:text"`
+//	}
+//
+//	repo := mirage.NewRepository[User](db)
+//	err := repo.Insert(ctx, &User{Name: "Alice"})
+type Repository[T any] struct {
+	db          *DB
+	table       *schemapkg.Table
+	cache       Cache
+	cacheTTLMin time.Duration
+	cacheTTLMax time.Duration
+}
+
+// RepositoryOption configures a Repository.
+type RepositoryOption func(*repositoryConfig)
+
+type repositoryConfig struct {
+	cache      Cache
+	cacheTTLMin time.Duration
+	cacheTTLMax time.Duration
+}
+
+// WithCache enables result caching for the repository with a fixed TTL.
+func WithCache(cache Cache, ttl time.Duration) RepositoryOption {
+	return func(cfg *repositoryConfig) {
+		cfg.cache = cache
+		cfg.cacheTTLMin = ttl
+		cfg.cacheTTLMax = 0
+	}
+}
+
+// WithCacheJitter enables result caching with a random TTL range to avoid
+// cache stampede. TTL will be random in [ttlMin, ttlMax].
+func WithCacheJitter(cache Cache, ttlMin, ttlMax time.Duration) RepositoryOption {
+	return func(cfg *repositoryConfig) {
+		cfg.cache = cache
+		cfg.cacheTTLMin = ttlMin
+		cfg.cacheTTLMax = ttlMax
+	}
+}
+
+// NewRepository creates a new Repository for the given struct type T.
+func NewRepository[T any](db *DB, opts ...RepositoryOption) *Repository[T] {
+	var zero T
+	typ := reflect.TypeOf(zero)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	td, err := cachedTable(typ)
+	if err != nil {
+		panic(fmt.Sprintf("mirage: cannot create repository for %T: %v", zero, err))
+	}
+
+	cfg := repositoryConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	return &Repository[T]{
+		db:          db,
+		table:       td,
+		cache:       cfg.cache,
+		cacheTTLMin: cfg.cacheTTLMin,
+		cacheTTLMax: cfg.cacheTTLMax,
+	}
+}
+
+// Insert inserts a single record. The primary key is scanned into value's
+// primary key field if it is auto-generated (bigserial, identity, etc.).
+func (r *Repository[T]) Insert(ctx context.Context, value *T) error {
+	structValue := schemapkg.IndirectValue(value)
+	err := r.insertTableRecord(ctx, structValue, nil, "", false)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// InsertReturning inserts a single record and scans all returned columns
+// back into value. This uses RETURNING * so all database-generated values
+// (defaults, computed columns, etc.) are populated.
+func (r *Repository[T]) InsertReturning(ctx context.Context, value *T) error {
+	structValue := schemapkg.IndirectValue(value)
+	primaryKey, ok := r.table.FindPrimaryKey()
+	if !ok {
+		return fmt.Errorf("no primary key found for table %s", r.table.Name)
+	}
+	idPtr := structValue.FieldByIndex(primaryKey.FieldIndex).Addr().Interface()
+	err := r.insertTableRecord(ctx, structValue, idPtr, "", false)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// Update persists all columns of a record, using the primary key to
+// identify the row. Returns the number of rows affected.
+func (r *Repository[T]) Update(ctx context.Context, value *T) (int64, error) {
+	columnsToUpdate := r.table.ListColumnNamesExcept()
+	n, err := r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return n, err
+}
+
+// UpdateReturning updates a record and scans all returned columns back
+// into value. Returns the number of rows affected.
+func (r *Repository[T]) UpdateReturning(ctx context.Context, value *T) (int64, error) {
+	primaryKey, ok := r.table.FindPrimaryKey()
+	if !ok {
+		return 0, fmt.Errorf("no primary key found in table definition: %s", r.table.Name)
+	}
+	columnsToUpdate := r.table.ListColumnNamesExcept()
+	query, args, err := schemapkg.BuildUpdateQuery(value, columnsToUpdate, false, primaryKey, "*")
+	if err != nil {
+		return 0, err
+	}
+	tag, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	r.invalidateCache(ctx)
+	return tag.RowsAffected(), nil
+}
+
+// UpdateOnlyColumns updates only the specified columns. Pass nil to update
+// all non-generated columns. Returns the number of rows affected.
+func (r *Repository[T]) UpdateOnlyColumns(ctx context.Context, columns []string, value *T) (int64, error) {
+	if columns == nil {
+		columns = r.table.ListColumnNamesExcept()
+	}
+	n, err := r.updateTableRecords(ctx, columns, false, []any{value})
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return n, err
+}
+
+// UpdateExceptColumns updates all columns except the specified ones.
+// Returns the number of rows affected.
+func (r *Repository[T]) UpdateExceptColumns(ctx context.Context, columns []string, value *T) (int64, error) {
+	columnsToUpdate := r.table.ListColumnNamesExcept(columns...)
+	n, err := r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return n, err
+}
+
+// Upsert inserts a record with ON CONFLICT semantics. forceOnConflictExpr
+// is appended to the ON CONFLICT clause and may be empty.
+func (r *Repository[T]) Upsert(ctx context.Context, value *T, forceOnConflictExpr string) error {
+	structValue := schemapkg.IndirectValue(value)
+	err := r.insertTableRecord(ctx, structValue, nil, forceOnConflictExpr, true)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// UpsertReturning inserts a record with ON CONFLICT semantics and scans
+// all returned columns back into value.
+func (r *Repository[T]) UpsertReturning(ctx context.Context, value *T, forceOnConflictExpr string) error {
+	structValue := schemapkg.IndirectValue(value)
+	primaryKey, ok := r.table.FindPrimaryKey()
+	if !ok {
+		return fmt.Errorf("no primary key found for table %s", r.table.Name)
+	}
+	idPtr := structValue.FieldByIndex(primaryKey.FieldIndex).Addr().Interface()
+	err := r.insertTableRecord(ctx, structValue, idPtr, forceOnConflictExpr, true)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// Delete removes one or more records by primary key. Returns the number
+// of rows deleted.
+func (r *Repository[T]) Delete(ctx context.Context, values ...*T) (int64, error) {
+	if len(values) == 0 {
+		return 0, nil
+	}
+	anyValues := make([]any, len(values))
+	for i, v := range values {
+		anyValues[i] = v
+	}
+	n, err := r.deleteTableRecords(ctx, anyValues)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return n, err
+}
+
+// SelectByID fetches a single record by its primary key. Returns a
+// pointer to T or ErrNoRows if not found. When a cache is configured,
+// results are cached transparently.
+func (r *Repository[T]) SelectByID(ctx context.Context, id any) (*T, error) {
+	if r.cache != nil {
+		key := fmt.Sprintf("%s:pk:%v", r.table.Name, id)
+		var cached T
+		found, err := r.cache.Get(ctx, key, &cached)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return &cached, nil
+		}
+	}
+
+	var result T
+	err := r.selectTableRecordByID(ctx, r.table, &result, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.cache != nil {
+		key := fmt.Sprintf("%s:pk:%v", r.table.Name, id)
+		_ = r.cache.Set(ctx, key, result, r.jitteredTTL())
+	}
+
+	return &result, nil
+}
+
+// Exists reports whether a record matching the non-zero fields of value
+// exists in the database. When a cache is configured, results are cached
+// transparently.
+func (r *Repository[T]) Exists(ctx context.Context, value *T) (bool, error) {
+	if r.cache != nil {
+		structValue := schemapkg.IndirectValue(value)
+		key := fmt.Sprintf("%s:exists:%v", r.table.Name, structValue.Interface())
+		var cached bool
+		found, err := r.cache.Get(ctx, key, &cached)
+		if err != nil {
+			return false, err
+		}
+		if found {
+			return cached, nil
+		}
+
+		exists, err := r.tableRecordExists(ctx, r.table, structValue)
+		if err != nil {
+			return false, err
+		}
+		_ = r.cache.Set(ctx, key, exists, r.jitteredTTL())
+		return exists, nil
+	}
+
+	structValue := schemapkg.IndirectValue(value)
+	return r.tableRecordExists(ctx, r.table, structValue)
+}
+
+// Duplicate copies an existing record, inserting a new row with all the
+// same column values except the primary key. Returns the newly created
+// record or an error.
+func (r *Repository[T]) Duplicate(ctx context.Context, value *T) (*T, error) {
+	primaryKey, ok := r.table.FindPrimaryKey()
+	if !ok {
+		return nil, fmt.Errorf("duplicate: primary key is required")
+	}
+	val := schemapkg.IndirectValue(value)
+	idValue, err := schemapkg.ExtractPrimaryKeyValue(primaryKey, val)
+	if err != nil {
+		return nil, err
+	}
+	newID := reflect.New(primaryKey.FieldType).Interface()
+	err = r.duplicateTableRecord(ctx, idValue, newID)
+	if err != nil {
+		return nil, err
+	}
+	r.invalidateCache(ctx)
+	return r.SelectByID(ctx, newID)
+}
+
+// InsertMany inserts multiple records in a single transaction.
+func (r *Repository[T]) InsertMany(ctx context.Context, values []*T) error {
+	if len(values) == 0 {
+		return nil
+	}
+	err := r.db.InTransaction(ctx, func(db *DB) error {
+		for _, v := range values {
+			if err := r.Insert(ctx, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// InsertManyReturning inserts multiple records with RETURNING * in a
+// single transaction. Each value's generated columns are populated.
+func (r *Repository[T]) InsertManyReturning(ctx context.Context, values []*T) error {
+	if len(values) == 0 {
+		return nil
+	}
+	err := r.db.InTransaction(ctx, func(db *DB) error {
+		for _, v := range values {
+			if err := r.InsertReturning(ctx, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// UpdateMany persists all columns of multiple records in a single
+// transaction. Returns the total number of rows affected.
+func (r *Repository[T]) UpdateMany(ctx context.Context, values []*T) (int64, error) {
+	if len(values) == 0 {
+		return 0, nil
+	}
+	anyValues := make([]any, len(values))
+	for i, v := range values {
+		anyValues[i] = v
+	}
+	n, err := r.updateTableRecords(ctx, nil, false, anyValues)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return n, err
+}
+
+// UpsertMany inserts or updates multiple records in a single transaction.
+func (r *Repository[T]) UpsertMany(ctx context.Context, values []*T, forceOnConflictExpr string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	err := r.db.InTransaction(ctx, func(db *DB) error {
+		for _, v := range values {
+			if err := r.Upsert(ctx, v, forceOnConflictExpr); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return err
+}
+
+// DeleteMany removes multiple records by primary key in a single
+// transaction. Returns the total number of rows deleted.
+func (r *Repository[T]) DeleteMany(ctx context.Context, values []*T) (int64, error) {
+	if len(values) == 0 {
+		return 0, nil
+	}
+	anyValues := make([]any, len(values))
+	for i, v := range values {
+		anyValues[i] = v
+	}
+	n, err := r.deleteTableRecords(ctx, anyValues)
+	if err == nil {
+		r.invalidateCache(ctx)
+	}
+	return n, err
+}
+
+// Query executes a SQL query and scans all resulting rows into a slice
+// of *T. Returns nil (not an error) if no rows are returned.
+func (r *Repository[T]) Query(ctx context.Context, sql string, args ...any) ([]*T, error) {
+	var results []*T
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		elem := new(T)
+		if err := scanRow(r.table, rows, elem); err != nil {
+			return nil, err
+		}
+		results = append(results, elem)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+// QuerySingle executes a SQL query and scans the single resulting row
+// into a *T. Returns ErrNoRows if no row is returned.
+func (r *Repository[T]) QuerySingle(ctx context.Context, sql string, args ...any) (*T, error) {
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("%s: %w", r.table.GetHumanName(), err)
+		}
+		return nil, fmt.Errorf("%s: %w", r.table.GetHumanName(), ErrNoRows)
+	}
+
+	result := new(T)
+	if err := scanRow(r.table, rows, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// QueryWithCache is like Query but caches the result using the repository's
+// configured cache. key is the cache key, ttl overrides the default TTL.
+// If no cache is configured, this behaves identically to Query.
+func (r *Repository[T]) QueryWithCache(ctx context.Context, key string, ttl time.Duration, sql string, args ...any) ([]*T, error) {
+	if r.cache != nil {
+		var cached []*T
+		found, err := r.cache.Get(ctx, key, &cached)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return cached, nil
+		}
+	}
+
+	results, err := r.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.cache != nil && results != nil {
+		_ = r.cache.Set(ctx, key, results, ttl)
+	}
+
+	return results, nil
+}
+
+// QuerySingleWithCache is like QuerySingle but caches the result.
+// If no cache is configured, this behaves identically to QuerySingle.
+func (r *Repository[T]) QuerySingleWithCache(ctx context.Context, key string, ttl time.Duration, sql string, args ...any) (*T, error) {
+	if r.cache != nil {
+		var cached T
+		found, err := r.cache.Get(ctx, key, &cached)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return &cached, nil
+		}
+	}
+
+	result, err := r.QuerySingle(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.cache != nil {
+		_ = r.cache.Set(ctx, key, result, ttl)
+	}
+
+	return result, nil
+}
+
+// InvalidateCache removes all cached values whose keys start with prefix.
+// No-op if no cache is configured.
+func (r *Repository[T]) InvalidateCache(ctx context.Context, prefix string) error {
+	if r.cache == nil {
+		return nil
+	}
+	return r.cache.Invalidate(ctx, prefix)
+}
+
+// scanRow maps row columns to struct fields using the table definition.
+func scanRow(td *schemapkg.Table, rows Rows, dest any) error {
+	destVal := reflect.ValueOf(dest).Elem()
+
+	colMap := make(map[string]*schemapkg.Column, len(td.Columns))
+	for _, col := range td.Columns {
+		colMap[col.Name] = col
+	}
+
+	fieldDescs := rows.FieldDescriptions()
+	dests := make([]any, len(fieldDescs))
+	for i, fd := range fieldDescs {
+		col, ok := colMap[fd.Name]
+		if ok && col.FieldIndex != nil {
+			field := destVal.FieldByIndex(col.FieldIndex)
+			if field.CanAddr() {
+				dests[i] = field.Addr().Interface()
+			} else {
+				dests[i] = new(any)
+			}
+		} else {
+			dests[i] = new(any)
+		}
+	}
+
+	return rows.Scan(dests...)
+}
+
+// --- Internal helpers (moved from DB methods) ---
+
+func (r *Repository[T]) jitteredTTL() time.Duration {
+	if r.cacheTTLMax <= r.cacheTTLMin {
+		return r.cacheTTLMin
+	}
+	delta := r.cacheTTLMax - r.cacheTTLMin
+	return r.cacheTTLMin + time.Duration(rand.Int63n(int64(delta)))
+}
+
+func (r *Repository[T]) invalidateCache(ctx context.Context) {
+	if r.cache != nil {
+		_ = r.cache.Invalidate(ctx, r.table.Name+":")
+	}
+}
+
+func (r *Repository[T]) insertTableRecord(ctx context.Context, structValue reflect.Value, idPtr any, forceOnConflictExpr string, upsert bool, returningColumns ...string) error {
+	query, args, err := schemapkg.BuildInsertQuery(r.table, structValue, idPtr, forceOnConflictExpr, upsert, returningColumns...)
+	if err != nil {
+		return err
+	}
+	if idPtr != nil || len(returningColumns) > 0 {
+		return r.db.QueryRow(ctx, query, args...).Scan(idPtr)
+	}
+	_, err = r.db.Exec(ctx, query, args...)
+	return err
+}
+
+func (r *Repository[T]) updateTableRecord(ctx context.Context, value any, columnsToUpdate []string, reportNotFound bool, primaryKey *schemapkg.Column, returningColumns ...string) (int64, error) {
+	query, args, err := schemapkg.BuildUpdateQuery(value, columnsToUpdate, reportNotFound, primaryKey, returningColumns...)
+	if err != nil {
+		return 0, err
+	}
+	if reportNotFound {
+		scanErr := r.db.QueryRow(ctx, query, args...).Scan(nil)
+		if scanErr != nil {
+			return 0, scanErr
+		}
+		return 1, nil
+	}
+	tag, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (r *Repository[T]) updateTableRecords(ctx context.Context, columnsToUpdate []string, reportNotFound bool, values []any) (int64, error) {
+	primaryKey, ok := r.table.FindPrimaryKey()
+	if !ok {
+		return 0, fmt.Errorf("no primary key found in table definition: %s", r.table.Name)
+	}
+	if len(values) == 1 {
+		return r.updateTableRecord(ctx, values[0], columnsToUpdate, reportNotFound, primaryKey)
+	}
+	var totalRowsAffected int64
+	err := r.db.InTransaction(ctx, func(db *DB) error {
+		for _, value := range values {
+			rowsAffected, err := r.updateTableRecord(ctx, value, columnsToUpdate, reportNotFound, primaryKey)
+			if err != nil {
+				return err
+			}
+			totalRowsAffected += rowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return totalRowsAffected, nil
+}
+
+func (r *Repository[T]) deleteTableRecords(ctx context.Context, values []any) (int64, error) {
+	query, ids, err := schemapkg.BuildDeleteQuery(r.table, values)
+	if err != nil {
+		return 0, err
+	}
+	tag, err := r.db.Exec(ctx, query, ids...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (r *Repository[T]) duplicateTableRecord(ctx context.Context, id any, newIDPtr any, returningColumns ...string) error {
+	if id == nil {
+		return fmt.Errorf("duplicate: id is required")
+	}
+	query, err := schemapkg.BuildDuplicateQuery(r.table, newIDPtr, returningColumns...)
+	if err != nil {
+		return err
+	}
+	if newIDPtr != nil {
+		err = r.db.QueryRow(ctx, query, id).Scan(newIDPtr)
+	} else {
+		_, err = r.db.Exec(ctx, query, id)
+	}
+	return err
+}
+
+func (r *Repository[T]) selectTableRecordByID(ctx context.Context, td *schemapkg.Table, destPtr any, id any) error {
+	primaryCol, ok := td.FindPrimaryKey()
+	if !ok {
+		return fmt.Errorf("no primary key found in table definition: %s", td.Name)
+	}
+	query := fmt.Sprintf(`SELECT * FROM %s.%s WHERE %s = $1 LIMIT 1;`,
+		QuoteIdentifier(r.db.searchPath), QuoteIdentifier(td.Name), QuoteIdentifier(primaryCol.Name))
+	return r.selectSingleTable(ctx, td, destPtr, query, id)
+}
+
+func (r *Repository[T]) selectTableRecordByUsernameAndPassword(ctx context.Context, destPtr any, username, plainPassword string) error {
+	usernameCol := r.table.GetUsernameColumn()
+	passwordCol := r.table.GetPasswordColumn()
+	if usernameCol == nil || passwordCol == nil {
+		return fmt.Errorf("username or password columns not found")
+	}
+	query := fmt.Sprintf(`SELECT * FROM %s.%s WHERE %s = $1 AND password = crypt($2, %s) LIMIT 1;`,
+		QuoteIdentifier(r.db.searchPath), QuoteIdentifier(r.table.Name), QuoteIdentifier(usernameCol.Name), QuoteIdentifier(passwordCol.Name))
+	return r.selectSingleTable(ctx, r.table, destPtr, query, username, plainPassword)
+}
+
+func (r *Repository[T]) selectSingleTable(ctx context.Context, td *schemapkg.Table, destPtr any, query string, args ...any) error {
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err = rows.Err(); err != nil {
+			return fmt.Errorf("%s: %w", td.GetHumanName(), err)
+		}
+		return fmt.Errorf("%s: %w", td.GetHumanName(), ErrNoRows)
+	}
+	return schemapkg.ConvertRowsToStruct(td, rows, destPtr)
+}
+
+func (r *Repository[T]) tableRecordExists(ctx context.Context, td *schemapkg.Table, structValue reflect.Value) (bool, error) {
+	query, args, err := schemapkg.BuildExistsQuery(td, structValue)
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	err = r.db.QueryRow(ctx, query, args...).Scan(&exists)
+	return exists, err
+}

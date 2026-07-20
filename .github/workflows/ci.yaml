@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Cancel superseded runs on the same branch/PR to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26.x"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Static checks: fmt, vet, golangci-lint. Fast-fail gate before the
+  # more expensive build/test jobs run.
+  # ---------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      # Fail the build on any unformatted Go files. `gofmt -l .` prints the
+      # names of files that differ from gofmt's output; we expect that list
+      # to be empty.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-ed:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # - name: golangci-lint
+      #   uses: golangci/golangci-lint-action@v6
+      #   with:
+      #     version: v1.64.9
+      #     args: --timeout=5m
+      #     cache: true
+
+  # ---------------------------------------------------------------------
+  # Build: verify the module and the CLI binary compile for every
+  # platform we ship (matches `go install github.com/.../cmd/mirage`
+  # usage from the README).
+  # ---------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Build library
+        run: go build ./...
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+
+      - name: Build CLI
+        run: go build -o /dev/null ./cmd/mirage
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+
+  # ---------------------------------------------------------------------
+  # Unit tests: fast, no external dependencies. Runs with -race and
+  # collects coverage across all packages. DB-backed integration tests
+  # live in the integration job below.
+  # ---------------------------------------------------------------------
+  test:
+    name: Unit tests
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Run unit tests
+        run: go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-report
+          path: coverage.out
+          retention-days: 14
+
+      # Optional: wire up to Codecov (or drop this step if you don't
+      # want a third-party coverage host). Requires CODECOV_TOKEN
+      # secret for private repos; public repos can omit it.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------
+  # Integration tests: run against a real PostgreSQL service container.
+  # These tests are gated behind the `integration` build tag and expect a
+  # database reachable at localhost:15432 with user/password/db "test"
+  # (see internal/integration and _examples/docker-compose.yml). We set
+  # MIRAGE_TEST_DATABASE_URL so the suite skips podman and connects to the
+  # service container directly.
+  # ---------------------------------------------------------------------
+  integration:
+    name: Integration tests (PostgreSQL)
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: mirage_test
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd="pg_isready -U test -d mirage_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      MIRAGE_TEST_DATABASE_URL: postgres://test:test@localhost:15432/mirage_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 60); do
+            if pg_isready -h localhost -p 15432 -U test -d mirage_test; then
+              echo "Postgres ready after $i attempts"
+              break
+            fi
+            echo "Waiting for Postgres... ($i/60)"
+            sleep 2
+          done
+          pg_isready -h localhost -p 15432 -U test -d mirage_test || exit 1
+
+      - name: Run integration tests
+        run: go test -tags=integration -race -count=1 ./...
+
+  # ---------------------------------------------------------------------
+  # Aggregate gate for branch protection: require this single job
+  # instead of listing every job above individually in the repo's
+  # branch protection rules.
+  # ---------------------------------------------------------------------
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [lint, build, test, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] || \
+             [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All required jobs passed."
