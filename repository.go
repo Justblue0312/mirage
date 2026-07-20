@@ -34,7 +34,7 @@ type Repository[T any] struct {
 type RepositoryOption func(*repositoryConfig)
 
 type repositoryConfig struct {
-	cache      Cache
+	cache       Cache
 	cacheTTLMin time.Duration
 	cacheTTLMax time.Duration
 }
@@ -631,17 +631,6 @@ func (r *Repository[T]) selectTableRecordByID(ctx context.Context, td *schemapkg
 	query := fmt.Sprintf(`SELECT * FROM %s.%s WHERE %s = $1 LIMIT 1;`,
 		QuoteIdentifier(r.db.searchPath), QuoteIdentifier(td.Name), QuoteIdentifier(primaryCol.Name))
 	return r.selectSingleTable(ctx, td, destPtr, query, id)
-}
-
-func (r *Repository[T]) selectTableRecordByUsernameAndPassword(ctx context.Context, destPtr any, username, plainPassword string) error {
-	usernameCol := r.table.GetUsernameColumn()
-	passwordCol := r.table.GetPasswordColumn()
-	if usernameCol == nil || passwordCol == nil {
-		return fmt.Errorf("username or password columns not found")
-	}
-	query := fmt.Sprintf(`SELECT * FROM %s.%s WHERE %s = $1 AND password = crypt($2, %s) LIMIT 1;`,
-		QuoteIdentifier(r.db.searchPath), QuoteIdentifier(r.table.Name), QuoteIdentifier(usernameCol.Name), QuoteIdentifier(passwordCol.Name))
-	return r.selectSingleTable(ctx, r.table, destPtr, query, username, plainPassword)
 }
 
 func (r *Repository[T]) selectSingleTable(ctx context.Context, td *schemapkg.Table, destPtr any, query string, args ...any) error {
