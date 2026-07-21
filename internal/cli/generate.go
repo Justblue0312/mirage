@@ -93,6 +93,9 @@ func generatePipeline(ctx context.Context, opts generateOptions, pool *pgxpool.P
 	var oldTree schema.Package
 	if pool != nil {
 		r := runner.New(getDialect())
+		if err := r.EnsureTracker(ctx, pool); err != nil {
+			return nil, fmt.Errorf("ensuring tracker: %w", err)
+		}
 		snapshot, serr := r.LoadSnapshot(ctx, pool)
 		if serr == nil && len(snapshot) > 0 {
 			if err := json.Unmarshal(snapshot, &oldTree); err != nil {
