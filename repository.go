@@ -230,7 +230,7 @@ func (r *Repository[T]) SelectByID(ctx context.Context, id any) (*T, error) {
 	}
 
 	var result T
-	err := r.selectTableRecordByID(ctx, r.table, &result, id)
+	err := r.selectTableRecordByID(ctx, r.table, &result, id, LockOption{})
 	if err != nil {
 		return nil, err
 	}
@@ -241,6 +241,73 @@ func (r *Repository[T]) SelectByID(ctx context.Context, id any) (*T, error) {
 	}
 
 	return &result, nil
+}
+
+// SelectByIDForUpdate reads a single row with row-level locking. It must
+// be called inside a transaction (via db.InTransaction or uow.Do) — outside
+// one, the lock is released the instant the statement completes and the
+// call returns an error rather than silently doing nothing.
+//
+// This method never reads from or writes to the cache: a locked read is
+// inherently about seeing the current, authoritative state inside a
+// transaction for the purpose of modifying it.
+func (r *Repository[T]) SelectByIDForUpdate(ctx context.Context, id any, opt LockOption) (*T, error) {
+	if !r.db.IsTransaction() {
+		return nil, fmt.Errorf("mirage: SelectByIDForUpdate requires an active transaction (call inside db.InTransaction or uow.Do); outside a transaction the lock is released before the caller's next statement runs")
+	}
+
+	var result T
+	err := r.selectTableRecordByID(ctx, r.table, &result, id, opt)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// QueryForUpdate executes a SQL query with row-level locking and scans all
+// resulting rows into a slice of *T. The lock option is appended to the
+// query. Must be called inside a transaction.
+//
+// This method never reads from or writes to the cache.
+func (r *Repository[T]) QueryForUpdate(ctx context.Context, opt LockOption, sql string, args ...any) ([]*T, error) {
+	if !r.db.IsTransaction() {
+		return nil, fmt.Errorf("mirage: QueryForUpdate requires an active transaction (call inside db.InTransaction or uow.Do); outside a transaction the lock is released before the caller's next statement runs")
+	}
+
+	// Append the lock clause to the user's SQL. The lock clause goes
+	// after WHERE ... ORDER BY ... LIMIT ... but before the final semicolon.
+	lockClause := opt.sql()
+	if lockClause == "" {
+		return r.Query(ctx, sql, args...)
+	}
+
+	// Strip trailing semicolon/whitespace, append lock clause, re-add semicolon.
+	cleaned := sql
+	for len(cleaned) > 0 && (cleaned[len(cleaned)-1] == ';' || cleaned[len(cleaned)-1] == ' ' || cleaned[len(cleaned)-1] == '\n' || cleaned[len(cleaned)-1] == '\t') {
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	lockSQL := cleaned + lockClause + ";"
+
+	var results []*T
+	rows, err := r.db.Query(ctx, lockSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		elem := new(T)
+		if err := scanRow(r.table, rows, elem); err != nil {
+			return nil, err
+		}
+		results = append(results, elem)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 // Exists reports whether a record matching the non-zero fields of value
@@ -665,13 +732,13 @@ func (r *Repository[T]) duplicateTableRecord(ctx context.Context, id any, newIDP
 	return err
 }
 
-func (r *Repository[T]) selectTableRecordByID(ctx context.Context, td *schemapkg.Table, destPtr any, id any) error {
+func (r *Repository[T]) selectTableRecordByID(ctx context.Context, td *schemapkg.Table, destPtr any, id any, lock LockOption) error {
 	primaryCol, ok := td.FindPrimaryKey()
 	if !ok {
 		return fmt.Errorf("no primary key found in table definition: %s", td.Name)
 	}
-	query := fmt.Sprintf(`SELECT * FROM %s.%s WHERE %s = $1 LIMIT 1;`,
-		QuoteIdentifier(r.db.searchPath), QuoteIdentifier(td.Name), QuoteIdentifier(primaryCol.Name))
+	query := fmt.Sprintf(`SELECT * FROM %s.%s WHERE %s = $1 LIMIT 1%s;`,
+		QuoteIdentifier(r.db.searchPath), QuoteIdentifier(td.Name), QuoteIdentifier(primaryCol.Name), lock.sql())
 	return r.selectSingleTable(ctx, td, destPtr, query, id)
 }
 
