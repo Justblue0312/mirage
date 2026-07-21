@@ -187,18 +187,20 @@ func TestLock_NoWait(t *testing.T) {
 	}
 
 	// Use NOWAIT in another transaction — should fail immediately.
-	err = db.InTransaction(ctx, func(dbc *mirage.DB) error {
+	// Return the error so InTransaction calls rollback (not commit),
+	// because the NOWAIT error puts the PG transaction in aborted state.
+	nwErr := db.InTransaction(ctx, func(dbc *mirage.DB) error {
 		txRepo := mirage.NewRepository[lockWidget](dbc)
 		_, err := txRepo.SelectByIDForUpdate(ctx, int64(1), mirage.ForUpdateNoWait())
 		if err == nil {
 			t.Fatal("expected lock_not_available error with NOWAIT")
 		}
-		t.Logf("got expected NOWAIT error: %v", err)
-		return nil // don't propagate — we expect this error
+		return err
 	})
-	if err != nil {
-		t.Fatalf("transaction: %v", err)
+	if nwErr == nil {
+		t.Fatal("expected error from NOWAIT transaction")
 	}
+	t.Logf("got expected NOWAIT error: %v", nwErr)
 }
 
 // TestLock_CacheBypass verifies that SelectByIDForUpdate never reads from
