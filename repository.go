@@ -2,6 +2,7 @@ package mirage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -248,7 +249,21 @@ func (r *Repository[T]) SelectByID(ctx context.Context, id any) (*T, error) {
 func (r *Repository[T]) Exists(ctx context.Context, value *T) (bool, error) {
 	if r.cache != nil {
 		structValue := schemapkg.IndirectValue(value)
-		key := fmt.Sprintf("%s:exists:%v", r.table.Name, structValue.Interface())
+		key, keyErr := r.existsCacheKey(structValue)
+		if keyErr != nil {
+			// Can't build a safe cache key for this value (e.g. a field
+			// isn't JSON-encodable) -- skip the cache rather than fall
+			// back to fmt's %v, which prints raw pointer addresses for
+			// pointer-typed fields (the standard idiom here for nullable
+			// columns). Two calls with equal *values* behind different
+			// pointers would then get different cache keys every time,
+			// so the cache would silently never hit for any table with a
+			// nullable column -- worse than not caching at all, because
+			// it looks like caching is working.
+			exists, err := r.tableRecordExists(ctx, r.table, structValue)
+			return exists, err
+		}
+
 		var cached bool
 		found, err := r.cache.Get(ctx, key, &cached)
 		if err != nil {
@@ -268,6 +283,20 @@ func (r *Repository[T]) Exists(ctx context.Context, value *T) (bool, error) {
 
 	structValue := schemapkg.IndirectValue(value)
 	return r.tableRecordExists(ctx, r.table, structValue)
+}
+
+// existsCacheKey builds a cache key from the value's content, not its
+// memory layout. json.Marshal dereferences pointer fields (the common
+// idiom for nullable columns) into their actual values, so two structs
+// that are equal in content always get the same key -- unlike fmt's %v,
+// which prints a pointer field's address and produces a different key on
+// every call even when the pointed-to value is identical.
+func (r *Repository[T]) existsCacheKey(structValue reflect.Value) (string, error) {
+	b, err := json.Marshal(structValue.Interface())
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:exists:%s", r.table.Name, b), nil
 }
 
 // Duplicate copies an existing record, inserting a new row with all the
@@ -298,8 +327,16 @@ func (r *Repository[T]) InsertMany(ctx context.Context, values []*T) error {
 		return nil
 	}
 	err := r.db.InTransaction(ctx, func(db *DB) error {
+		// Bind to the transactional db handle, not r (which is bound to
+		// r.db, the connection this Repository was constructed with). Using
+		// r.Insert here would silently run each row as its own autocommit
+		// statement on the pool instead of inside this transaction: every
+		// row before a failing one would stay committed, and this method's
+		// "single transaction" guarantee would be a no-op. No cache on
+		// txRepo -- invalidation happens once, after commit, below.
+		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, v := range values {
-			if err := r.Insert(ctx, v); err != nil {
+			if err := txRepo.Insert(ctx, v); err != nil {
 				return err
 			}
 		}
@@ -318,8 +355,9 @@ func (r *Repository[T]) InsertManyReturning(ctx context.Context, values []*T) er
 		return nil
 	}
 	err := r.db.InTransaction(ctx, func(db *DB) error {
+		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, v := range values {
-			if err := r.InsertReturning(ctx, v); err != nil {
+			if err := txRepo.InsertReturning(ctx, v); err != nil {
 				return err
 			}
 		}
@@ -354,8 +392,9 @@ func (r *Repository[T]) UpsertMany(ctx context.Context, values []*T, forceOnConf
 		return nil
 	}
 	err := r.db.InTransaction(ctx, func(db *DB) error {
+		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, v := range values {
-			if err := r.Upsert(ctx, v, forceOnConflictExpr); err != nil {
+			if err := txRepo.Upsert(ctx, v, forceOnConflictExpr); err != nil {
 				return err
 			}
 		}
@@ -580,8 +619,11 @@ func (r *Repository[T]) updateTableRecords(ctx context.Context, columnsToUpdate 
 	}
 	var totalRowsAffected int64
 	err := r.db.InTransaction(ctx, func(db *DB) error {
+		// txRepo, not r: r.updateTableRecord always executes against r.db,
+		// which would bypass this transaction entirely (see InsertMany).
+		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, value := range values {
-			rowsAffected, err := r.updateTableRecord(ctx, value, columnsToUpdate, reportNotFound, primaryKey)
+			rowsAffected, err := txRepo.updateTableRecord(ctx, value, columnsToUpdate, reportNotFound, primaryKey)
 			if err != nil {
 				return err
 			}

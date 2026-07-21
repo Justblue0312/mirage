@@ -66,10 +66,19 @@ func (u *pgUnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) erro
 
 func (u *pgUnitOfWork) DoWithOptions(ctx context.Context, opts pgx.TxOptions, fn func(ctx context.Context) error) error {
 	if outer, ok := ctx.Value(ctxKey{}).(pgx.Tx); ok {
-		// Nested call: pgx.Tx.Begin() on an existing Tx issues a real
-		// SAVEPOINT/RELEASE/ROLLBACK TO under the hood, so this is a true
-		// nested unit of work, not a no-op passthrough.
-		return u.runTx(ctx, outer, fn)
+		// Nested call: Begin() on an existing Tx issues a real SAVEPOINT
+		// under the hood, and the returned pgx.Tx's Commit/Rollback map to
+		// RELEASE SAVEPOINT / ROLLBACK TO SAVEPOINT rather than the
+		// top-level COMMIT/ROLLBACK. Using `outer` itself here (instead of
+		// the savepoint Begin() returns) would make runTx call Commit/
+		// Rollback directly on the outer transaction from inside the
+		// nested call -- closing it early and making the eventual outer
+		// runTx's own Commit fail with "tx is closed".
+		savepoint, err := outer.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("uow: begin savepoint: %w", err)
+		}
+		return u.runTx(ctx, savepoint, fn)
 	}
 
 	tx, err := u.pool.BeginTx(ctx, opts)

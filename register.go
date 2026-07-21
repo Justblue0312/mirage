@@ -51,84 +51,106 @@ var registry = NewRegistry()
 //
 //	var _ = reg.Register(mirage.Function{...})
 func (r *Registry) Register(items ...any) error {
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	for _, it := range items {
 		switch v := it.(type) {
 		case Function:
 			// Deduplicate by Name. If you need stronger uniqueness, build key from Name+Language+ReturnType+Body.
 			exists := false
-			for _, f := range registry.functions {
+			for _, f := range r.functions {
 				if f.Name == v.Name {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				registry.functions = append(registry.functions, v)
+				r.functions = append(r.functions, v)
 			}
 		case View:
-			// Optional: dedupe views by Name
 			exists := false
-			for _, vv := range registry.views {
+			for _, vv := range r.views {
 				if vv.Name == v.Name {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				registry.views = append(registry.views, v)
+				r.views = append(r.views, v)
 			}
 		case MaterializedView:
 			exists := false
-			for _, m := range registry.materializedViews {
+			for _, m := range r.materializedViews {
 				if m.Name == v.Name {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				registry.materializedViews = append(registry.materializedViews, v)
+				r.materializedViews = append(r.materializedViews, v)
 			}
 		case Trigger:
 			exists := false
-			for _, t := range registry.triggers {
+			for _, t := range r.triggers {
 				if t.Name == v.Name {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				registry.triggers = append(registry.triggers, v)
+				r.triggers = append(r.triggers, v)
 			}
 		case Procedure:
 			exists := false
-			for _, p := range registry.procedures {
+			for _, p := range r.procedures {
 				if p.Name == v.Name {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				registry.procedures = append(registry.procedures, v)
+				r.procedures = append(r.procedures, v)
 			}
 		case Grant:
-			// Deduplicate by ObjectType+ObjectName+joined privileges+joined roles as needed
-			registry.grants = append(registry.grants, v) // optional: add dedupe logic
+			// Same identity a Grant is deduplicated/matched by elsewhere
+			// (internal/diff and the scanner's post-scan sort both key
+			// Grants by SortKey()), so Register uses it too rather than
+			// appending unconditionally.
+			exists := false
+			for _, g := range r.grants {
+				if g.SortKey() == v.SortKey() {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				r.grants = append(r.grants, v)
+			}
 		case Policy:
 			exists := false
-			for _, p := range registry.policies {
+			for _, p := range r.policies {
 				if p.Name == v.Name {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				registry.policies = append(registry.policies, v)
+				r.policies = append(r.policies, v)
+			}
+		case Extension:
+			exists := false
+			for _, e := range r.extensions {
+				if e.Name == v.Name {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				r.extensions = append(r.extensions, v)
 			}
 		default:
-			return fmt.Errorf("unsupported type: %T", it)
+			return fmt.Errorf("register: unsupported type %T; expected one of Function, View, MaterializedView, Trigger, Procedure, Grant, Policy, Extension", it)
 		}
 	}
 
