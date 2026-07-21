@@ -8,11 +8,11 @@ import (
 
 func TestMapCatalogType(t *testing.T) {
 	tests := []struct {
-		name      string
-		udtName   string
-		dataType  string
+		name       string
+		udtName    string
+		dataType   string
 		charMaxLen int
-		want      string
+		want       string
 	}{
 		// Basic types
 		{"int4", "int4", "integer", 0, "integer"},

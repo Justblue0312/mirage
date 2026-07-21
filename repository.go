@@ -24,12 +24,12 @@ import (
 //	repo := mirage.NewRepository[User](db)
 //	err := repo.Insert(ctx, &User{Name: "Alice"})
 type Repository[T any] struct {
-	db          *DB
-	table       *schemapkg.Table
-	cache       Cache
-	cacheTTLMin time.Duration
-	cacheTTLMax time.Duration
-	retry       RetryOptions
+	db           *DB
+	table        *schemapkg.Table
+	cache        Cache
+	cacheTTLMin  time.Duration
+	cacheTTLMax  time.Duration
+	retry        RetryOptions
 	retryEnabled bool
 }
 
@@ -37,10 +37,10 @@ type Repository[T any] struct {
 type RepositoryOption func(*repositoryConfig)
 
 type repositoryConfig struct {
-	cache       Cache
-	cacheTTLMin time.Duration
-	cacheTTLMax time.Duration
-	retry       RetryOptions
+	cache        Cache
+	cacheTTLMin  time.Duration
+	cacheTTLMax  time.Duration
+	retry        RetryOptions
 	retryEnabled bool
 }
 

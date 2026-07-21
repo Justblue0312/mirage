@@ -288,7 +288,7 @@ func TestLock_ConcurrentBlocking(t *testing.T) {
 			return
 		}
 		blocked <- nil // signal: lock acquired
-		<-unblock       // wait for signal to release
+		<-unblock      // wait for signal to release
 		_ = tx.Rollback(ctx)
 	}()
 

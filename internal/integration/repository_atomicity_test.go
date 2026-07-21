@@ -245,9 +245,9 @@ func TestRepository_InsertMany_SuccessPath(t *testing.T) {
 // countingCache wraps a Cache and counts Get/Set calls, allowing tests to
 // distinguish cache misses (Get miss + Set) from cache hits (Get hit only).
 type countingCache struct {
-	inner       mirage.Cache
-	getCalls    int
-	setCalls    int
+	inner    mirage.Cache
+	getCalls int
+	setCalls int
 }
 
 func (c *countingCache) Get(ctx context.Context, key string, dest any) (bool, error) {

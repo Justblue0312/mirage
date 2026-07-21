@@ -629,11 +629,11 @@ func introspectGrants(ctx context.Context, pool *pgxpool.Pool, searchPath string
 			g.Privileges = append(g.Privileges, privilege)
 		} else {
 			grantMap[key] = &schema.Grant{
-				SearchPath:  searchPath,
-				ObjectType:  "TABLE",
-				ObjectName:  tableName,
-				Privileges:  []string{privilege},
-				Roles:       []string{grantee},
+				SearchPath: searchPath,
+				ObjectType: "TABLE",
+				ObjectName: tableName,
+				Privileges: []string{privilege},
+				Roles:      []string{grantee},
 			}
 		}
 	}
