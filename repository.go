@@ -29,6 +29,8 @@ type Repository[T any] struct {
 	cache       Cache
 	cacheTTLMin time.Duration
 	cacheTTLMax time.Duration
+	retry       RetryOptions
+	retryEnabled bool
 }
 
 // RepositoryOption configures a Repository.
@@ -38,6 +40,8 @@ type repositoryConfig struct {
 	cache       Cache
 	cacheTTLMin time.Duration
 	cacheTTLMax time.Duration
+	retry       RetryOptions
+	retryEnabled bool
 }
 
 // WithCache enables result caching for the repository with a fixed TTL.
@@ -56,6 +60,19 @@ func WithCacheJitter(cache Cache, ttlMin, ttlMax time.Duration) RepositoryOption
 		cfg.cache = cache
 		cfg.cacheTTLMin = ttlMin
 		cfg.cacheTTLMax = ttlMax
+	}
+}
+
+// WithRetry enables automatic retry of serialization failures and deadlocks
+// for this repository's write operations, using opts. Reads are never retried.
+// When the repository is called from inside an existing transaction (e.g. via
+// uow.Do), the retry wrapper is skipped and the operation runs directly in the
+// caller's transaction — retrying only makes sense when the call is the one
+// opening its own transaction.
+func WithRetry(opts RetryOptions) RepositoryOption {
+	return func(cfg *repositoryConfig) {
+		cfg.retry = opts
+		cfg.retryEnabled = true
 	}
 }
 
@@ -78,17 +95,51 @@ func NewRepository[T any](db *DB, opts ...RepositoryOption) *Repository[T] {
 	}
 
 	return &Repository[T]{
-		db:          db,
-		table:       td,
-		cache:       cfg.cache,
-		cacheTTLMin: cfg.cacheTTLMin,
-		cacheTTLMax: cfg.cacheTTLMax,
+		db:           db,
+		table:        td,
+		cache:        cfg.cache,
+		cacheTTLMin:  cfg.cacheTTLMin,
+		cacheTTLMax:  cfg.cacheTTLMax,
+		retry:        cfg.retry,
+		retryEnabled: cfg.retryEnabled,
 	}
+}
+
+// inRetryTransaction returns true when retry is enabled and the call is NOT
+// already inside an existing transaction — i.e. the call should open its own
+// retriable transaction. Returns false when retry is disabled or when already
+// inside a transaction (nested call — skip retry to avoid double-wrapping).
+func (r *Repository[T]) inRetryTransaction() bool {
+	return r.retryEnabled && !r.db.IsTransaction()
+}
+
+// doWithRetry runs fn inside a retriable transaction when retry is enabled and
+// the call is not already inside an existing transaction. When inside a
+// transaction (e.g. from uow.Do), fn runs directly without retry to avoid
+// double-wrapping. The cache is invalidated on success.
+func (r *Repository[T]) doWithRetry(ctx context.Context, fn func(tx *DB) error) error {
+	if r.inRetryTransaction() {
+		err := r.db.InTransactionWithRetry(ctx, r.retry, fn)
+		if err == nil {
+			r.invalidateCache(ctx)
+		}
+		return err
+	}
+	// Already inside a transaction or retry disabled — run directly.
+	return fn(r.db)
 }
 
 // Insert inserts a single record. The primary key is scanned into value's
 // primary key field if it is auto-generated (bigserial, identity, etc.).
+// When retry is enabled and not inside an existing transaction, the insert
+// runs in a retriable transaction.
 func (r *Repository[T]) Insert(ctx context.Context, value *T) error {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		return r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			return txRepo.Insert(ctx, value)
+		})
+	}
 	structValue := schemapkg.IndirectValue(value)
 	err := r.insertTableRecord(ctx, structValue, nil, "", false)
 	if err == nil {
@@ -117,6 +168,19 @@ func (r *Repository[T]) InsertReturning(ctx context.Context, value *T) error {
 // Update persists all columns of a record, using the primary key to
 // identify the row. Returns the number of rows affected.
 func (r *Repository[T]) Update(ctx context.Context, value *T) (int64, error) {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		var n int64
+		err := r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			var err error
+			n, err = txRepo.Update(ctx, value)
+			return err
+		})
+		if err == nil {
+			r.invalidateCache(ctx)
+		}
+		return n, err
+	}
 	columnsToUpdate := r.table.ListColumnNamesExcept()
 	n, err := r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
 	if err == nil {
@@ -171,7 +235,15 @@ func (r *Repository[T]) UpdateExceptColumns(ctx context.Context, columns []strin
 
 // Upsert inserts a record with ON CONFLICT semantics. forceOnConflictExpr
 // is appended to the ON CONFLICT clause and may be empty.
+// When retry is enabled and not inside an existing transaction, the upsert
+// runs in a retriable transaction.
 func (r *Repository[T]) Upsert(ctx context.Context, value *T, forceOnConflictExpr string) error {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		return r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			return txRepo.Upsert(ctx, value, forceOnConflictExpr)
+		})
+	}
 	structValue := schemapkg.IndirectValue(value)
 	err := r.insertTableRecord(ctx, structValue, nil, forceOnConflictExpr, true)
 	if err == nil {
@@ -393,7 +465,7 @@ func (r *Repository[T]) InsertMany(ctx context.Context, values []*T) error {
 	if len(values) == 0 {
 		return nil
 	}
-	err := r.db.InTransaction(ctx, func(db *DB) error {
+	txFn := func(db *DB) error {
 		// Bind to the transactional db handle, not r (which is bound to
 		// r.db, the connection this Repository was constructed with). Using
 		// r.Insert here would silently run each row as its own autocommit
@@ -408,7 +480,13 @@ func (r *Repository[T]) InsertMany(ctx context.Context, values []*T) error {
 			}
 		}
 		return nil
-	})
+	}
+	var err error
+	if r.retryEnabled && !r.db.IsTransaction() {
+		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
+	} else {
+		err = r.db.InTransaction(ctx, txFn)
+	}
 	if err == nil {
 		r.invalidateCache(ctx)
 	}
@@ -421,7 +499,7 @@ func (r *Repository[T]) InsertManyReturning(ctx context.Context, values []*T) er
 	if len(values) == 0 {
 		return nil
 	}
-	err := r.db.InTransaction(ctx, func(db *DB) error {
+	txFn := func(db *DB) error {
 		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, v := range values {
 			if err := txRepo.InsertReturning(ctx, v); err != nil {
@@ -429,7 +507,13 @@ func (r *Repository[T]) InsertManyReturning(ctx context.Context, values []*T) er
 			}
 		}
 		return nil
-	})
+	}
+	var err error
+	if r.retryEnabled && !r.db.IsTransaction() {
+		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
+	} else {
+		err = r.db.InTransaction(ctx, txFn)
+	}
 	if err == nil {
 		r.invalidateCache(ctx)
 	}
@@ -458,7 +542,7 @@ func (r *Repository[T]) UpsertMany(ctx context.Context, values []*T, forceOnConf
 	if len(values) == 0 {
 		return nil
 	}
-	err := r.db.InTransaction(ctx, func(db *DB) error {
+	txFn := func(db *DB) error {
 		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, v := range values {
 			if err := txRepo.Upsert(ctx, v, forceOnConflictExpr); err != nil {
@@ -466,7 +550,13 @@ func (r *Repository[T]) UpsertMany(ctx context.Context, values []*T, forceOnConf
 			}
 		}
 		return nil
-	})
+	}
+	var err error
+	if r.retryEnabled && !r.db.IsTransaction() {
+		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
+	} else {
+		err = r.db.InTransaction(ctx, txFn)
+	}
 	if err == nil {
 		r.invalidateCache(ctx)
 	}
@@ -685,7 +775,7 @@ func (r *Repository[T]) updateTableRecords(ctx context.Context, columnsToUpdate 
 		return r.updateTableRecord(ctx, values[0], columnsToUpdate, reportNotFound, primaryKey)
 	}
 	var totalRowsAffected int64
-	err := r.db.InTransaction(ctx, func(db *DB) error {
+	txFn := func(db *DB) error {
 		// txRepo, not r: r.updateTableRecord always executes against r.db,
 		// which would bypass this transaction entirely (see InsertMany).
 		txRepo := &Repository[T]{db: db, table: r.table}
@@ -697,7 +787,13 @@ func (r *Repository[T]) updateTableRecords(ctx context.Context, columnsToUpdate 
 			totalRowsAffected += rowsAffected
 		}
 		return nil
-	})
+	}
+	var err error
+	if r.retryEnabled && !r.db.IsTransaction() {
+		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
+	} else {
+		err = r.db.InTransaction(ctx, txFn)
+	}
 	if err != nil {
 		return 0, err
 	}
