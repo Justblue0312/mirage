@@ -236,6 +236,23 @@ Mirage automatically orders generated SQL so that dependencies are respected:
 
 Changed objects are always drop+recreated for consistency.
 
+## Configuration File
+
+Mirage supports an optional YAML config file (`mirage.yaml` or `.mirage.yaml`) to avoid repeating flags on every command. The file is searched from the current directory upward to the filesystem root. CLI flags always take precedence.
+
+```yaml
+# mirage.yaml
+source:
+  - ./internal/models
+  - ./internal/legacy
+migrations_dir: ./migrations
+db: "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+idempotent: true
+verbose: false
+```
+
+Environment variables in the `db` field are expanded (`${DATABASE_URL}` or `$DATABASE_URL`). A missing config file is not an error.
+
 ## Migration Workflow
 
 ### 1. Initialize
@@ -283,7 +300,17 @@ mirage migrate --db "postgres://..." --dry-run
 mirage status --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ```
 
-### 5. Rollback
+### 5. Drift Detection
+
+Detect schema changes made outside of mirage migrations:
+
+```bash
+mirage status --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable" --check-drift
+```
+
+This connects to a live PostgreSQL database, reads its catalog, and compares it against the last applied migration snapshot. Drift is detected for: tables (added/dropped columns), enums, indexes, foreign keys, unique constraints, check constraints, and extensions.
+
+### 6. Rollback
 
 ```bash
 # Roll back last 1 migration
@@ -296,7 +323,7 @@ mirage rollback 3 --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable
 mirage rollback --db "postgres://..." --dry-run
 ```
 
-### 6. Create Manual Migration
+### 7. Create Manual Migration
 
 ```bash
 mirage create -m "add index on users email"
@@ -456,6 +483,71 @@ wg.Wait()
 err = tx.Commit(ctx)
 ```
 
+### Row-Level Locking
+
+Select rows with PostgreSQL row-level locks:
+
+```go
+// FOR UPDATE — exclusive lock, blocks until available
+user, err := repo.SelectByIDForUpdate(ctx, 42, mirage.ForUpdate())
+
+// FOR UPDATE NOWAIT — fail immediately if row is locked (SQLSTATE 55P03)
+user, err = repo.SelectByIDForUpdate(ctx, 42, mirage.ForUpdateNoWait())
+
+// FOR UPDATE SKIP LOCKED — skip locked rows (job-queue / outbox pattern)
+user, err = repo.SelectByIDForUpdate(ctx, 42, mirage.ForUpdateSkipLocked())
+
+// Raw SQL with lock
+users, err := repo.QueryForUpdate(ctx, mirage.ForShare(),
+    "SELECT * FROM users WHERE status = $1 FOR SHARE", "active")
+```
+
+Lock options: `ForUpdate()`, `ForNoKeyUpdate()`, `ForShare()`, `ForKeyShare()`, `ForUpdateSkipLocked()`, `ForUpdateNoWait()`.
+
+Locking always bypasses cache and is transaction-scoped — the lock is held until the transaction commits or rolls back.
+
+### Retry Helpers
+
+Automatically retry transactions on transient failures (serialization failures, deadlocks):
+
+```go
+// Repository-level retry (applies to Insert, Update, Upsert, Delete, batch methods)
+repo := mirage.NewRepository[User](db, mirage.WithRetry(mirage.RetryOptions{
+    MaxAttempts: 3,
+    BaseDelay:   10 * time.Millisecond,
+}))
+
+// Transaction-level retry
+err := db.InTransactionWithRetry(ctx, mirage.RetryOptions{
+    MaxAttempts: 3,
+    BaseDelay:   5 * time.Millisecond,
+}, func(tx *mirage.DB) error {
+    _, err := tx.Exec(ctx, "UPDATE inventory SET qty = qty - 1 WHERE id = $1 AND qty > 0", productID)
+    return err
+})
+```
+
+Retry is skipped when already inside a transaction (nested savepoint retry can't restore outer state).
+
+### Unit of Work
+
+Coordinate transactions across module boundaries in a modular monolith:
+
+```go
+uow := mirage.NewUnitOfWork(pool)
+
+// Begin a unit of work
+ctx, err := uow.Begin(ctx)
+defer uow.Rollback(ctx)
+
+// Repositories get the active transaction from context
+repo := mirage.NewRepository[User](db)
+_, err = repo.InsertReturning(ctx, &User{Name: "Alice"})
+
+// Commit everything together
+err = uow.Commit(ctx)
+```
+
 ### Caching
 
 ```go
@@ -569,6 +661,18 @@ if typeName, ok := mirage.IsErrInputSyntax(err); ok {
 
 if col, ok := mirage.IsErrColumnNotExists(err); ok {
     // Column does not exist: col
+}
+
+if mirage.IsErrSerializationFailure(err) {
+    // PostgreSQL serialization failure (SQLSTATE 40001)
+}
+
+if mirage.IsErrDeadlock(err) {
+    // PostgreSQL deadlock detected (SQLSTATE 40P01)
+}
+
+if mirage.IsErrRetryable(err) {
+    // Serialization failure or deadlock — transient, safe to retry
 }
 ```
 

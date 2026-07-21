@@ -172,6 +172,17 @@ func main() {
 | `--db` | - | Database connection string (optional) |
 | `--dir` | `./migrations` | Migrations directory |
 | `--format` | `table` | Output format: `table` or `json` |
+| `--check-drift` | `false` | Compare live database schema against the last snapshot and report manual changes (requires `--db`) |
+
+#### Drift Detection
+
+`mirage status --check-drift` connects to a live PostgreSQL database, reads its catalog (tables, columns, constraints, enums, etc.), and compares it against the last applied migration snapshot. Any differences are reported as drift events — schema changes made outside of mirage migrations.
+
+```bash
+mirage status --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable" --check-drift
+```
+
+Drift is detected for: tables (added/dropped columns, renamed columns), enums (added/removed values), indexes, foreign keys, unique constraints, check constraints, and extensions.
 
 #### `create`
 
@@ -485,6 +496,14 @@ err = tx.Commit(ctx)
 
 // Concurrent transaction (goroutine-safe)
 tx, err := db.BeginConcurrent(ctx)
+
+// Transaction with automatic retry on serialization failures
+err = db.InTransactionWithRetry(ctx, mirage.RetryOptions{
+    MaxAttempts: 3,
+}, func(tx *mirage.DB) error {
+    _, err := tx.Exec(ctx, "INSERT INTO ...")
+    return err
+})
 ```
 
 ### Generic Query Helpers
@@ -545,6 +564,87 @@ users, err := repo.QueryWithCache(ctx, "users:active", 5*time.Minute,
 // or manually:
 err = repo.InvalidateCache(ctx, "users:")
 ```
+
+### Row-Level Locking
+
+```go
+// Select with FOR UPDATE (exclusive lock, blocks until available)
+user, err := repo.SelectByIDForUpdate(ctx, 42, mirage.ForUpdate())
+
+// Fail immediately if row is locked (SQLSTATE 55P03)
+user, err = repo.SelectByIDForUpdate(ctx, 42, mirage.ForUpdateNoWait())
+
+// Skip locked rows (job-queue / outbox pattern)
+user, err = repo.SelectByIDForUpdate(ctx, 42, mirage.ForUpdateSkipLocked())
+
+// Lock options also work for raw SQL queries
+users, err := repo.QueryForUpdate(ctx, mirage.ForUpdate(),
+    "SELECT * FROM users WHERE status = $1 FOR UPDATE", "active")
+```
+
+Locking never reads from cache and bypasses the repository cache entirely. When inside a transaction, the lock is held until the transaction commits or rolls back.
+
+### Retry Helpers
+
+```go
+// Retry on serialization failures and deadlocks (exponential backoff)
+repo := mirage.NewRepository[User](db, mirage.WithRetry(mirage.RetryOptions{
+    MaxAttempts: 3,
+    BaseDelay:   10 * time.Millisecond,
+}))
+
+// Custom retry predicate
+repo = mirage.NewRepository[User](db, mirage.WithRetry(mirage.RetryOptions{
+    MaxAttempts: 5,
+    ShouldRetry: func(err error) bool {
+        return mirage.IsErrRetryable(err) || myCustomCheck(err)
+    },
+}))
+
+// Direct transaction-level retry (not per-repo)
+err := db.InTransactionWithRetry(ctx, mirage.RetryOptions{
+    MaxAttempts: 3,
+}, func(tx *mirage.DB) error {
+    _, err := tx.Exec(ctx, "UPDATE ...")
+    return err
+})
+```
+
+Retry is skipped when the repository is already inside an existing transaction.
+
+### Unit of Work
+
+```go
+// Create a Unit of Work for cross-module transactional coordination
+uow := mirage.NewUnitOfWork(pool)
+
+// Start a unit of work with context
+ctx, err := uow.Begin(ctx)
+defer uow.Rollback(ctx)
+
+// Repositories get the active transaction from context
+repo := mirage.NewRepository[User](db)
+// ...
+
+err = uow.Commit(ctx)
+```
+
+### Config File
+
+Mirage supports an optional YAML config file. It searches from the current directory upward for `mirage.yaml` or `.mirage.yaml`. CLI flags always take precedence over config values.
+
+```yaml
+# mirage.yaml
+source:
+  - ./internal/models
+  - ./internal/legacy
+migrations_dir: ./migrations
+db: "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+idempotent: true
+verbose: false
+```
+
+Environment variables are expanded in the `db` field (`${DATABASE_URL}` or `$DATABASE_URL` syntax). A missing config file is not an error — all values fall back to their CLI defaults.
 
 ### Executing Embedded SQL Files
 
@@ -655,6 +755,18 @@ if detail, ok := mirage.IsErrInputSyntax(err); ok {
 
 if col, ok := mirage.IsErrColumnNotExists(err); ok {
     // column does not exist: col
+}
+
+if mirage.IsErrSerializationFailure(err) {
+    // PostgreSQL serialization failure (SQLSTATE 40001)
+}
+
+if mirage.IsErrDeadlock(err) {
+    // PostgreSQL deadlock detected (SQLSTATE 40P01)
+}
+
+if mirage.IsErrRetryable(err) {
+    // serialization failure or deadlock — transient, safe to retry
 }
 ```
 
