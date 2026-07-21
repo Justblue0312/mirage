@@ -454,17 +454,18 @@ func (p *Postgres) GetRecentAppliedSQL(n int) string {
 }
 
 func (p *Postgres) RecordAppliedSQL() string {
-	return `INSERT INTO schema_migrations (version, name, applied_at, state, checksum, snapshot)
-		VALUES ($1, $2, NOW(), 'applied', $3, $4)
+	return `INSERT INTO schema_migrations (version, name, applied_at, state, checksum)
+		VALUES ($1, $2, NOW(), 'applied', $3)
 		ON CONFLICT (version) DO UPDATE SET
 			name       = EXCLUDED.name,
 			applied_at = NOW(),
 			state      = 'applied',
 			checksum   = EXCLUDED.checksum`
-	// Deliberately not touching `snapshot` here: if a row for this version
-	// already exists (created by a prior `generate --db` via SaveSnapshotSQL
-	// below), it already holds the real snapshot and must not be
-	// overwritten with the nil the runner package always passes for it.
+	// No snapshot column here: the snapshot for a given version is set
+	// exclusively by SaveSnapshotSQL. This ensures the runner's nil value
+	// can never overwrite a previously saved snapshot, even if the ON
+	// CONFLICT clause's interaction with a NULL jsonb parameter were to
+	// differ across pgx or PostgreSQL versions.
 }
 
 func (p *Postgres) RecordFailedSQL() string {
@@ -557,7 +558,7 @@ func (p *Postgres) SaveSnapshotSQL() string {
 }
 
 func (p *Postgres) LoadSnapshotSQL() string {
-	return "SELECT snapshot FROM schema_migrations WHERE state='applied' AND snapshot IS NOT NULL ORDER BY version DESC LIMIT 1"
+	return "SELECT snapshot FROM schema_migrations WHERE state IN ('applied','pending') AND snapshot IS NOT NULL ORDER BY version DESC LIMIT 1"
 }
 
 func (p *Postgres) UpgradeTrackerSQL() []string {

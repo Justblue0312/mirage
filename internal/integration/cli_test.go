@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	cli "github.com/justblue/mirage/internal/cli"
 )
 
@@ -63,6 +64,22 @@ func TestGenerate_DestructiveChangeNonInteractive(t *testing.T) {
 	}
 	if err := run("migrate", "--db", dsn, "--dir", migrationsDir); err != nil {
 		t.Fatalf("applying initial migration: %v", err)
+	}
+
+	// Verify snapshot survived recordApplied (regression: runner's nil
+	// snapshot used to clobber the saved snapshot via the old INSERT).
+	pool, poolErr := pgxpool.New(t.Context(), dsn)
+	if poolErr == nil {
+		defer pool.Close()
+		var hasSnapshot bool
+		if qErr := pool.QueryRow(t.Context(),
+			"SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE state='applied' AND snapshot IS NOT NULL)",
+		).Scan(&hasSnapshot); qErr == nil {
+			t.Logf("snapshot exists after migrate: %v", hasSnapshot)
+			if !hasSnapshot {
+				t.Fatal("snapshot should exist after generate+save+migrate; was it clobbered by recordApplied?")
+			}
+		}
 	}
 
 	entriesBefore, err := os.ReadDir(migrationsDir)

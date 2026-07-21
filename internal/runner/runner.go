@@ -164,7 +164,7 @@ func (r *Runner) migrateLocked(ctx context.Context, pool *pgxpool.Pool, migratio
 				}
 			}
 
-			if err := r.recordApplied(ctx, tx, f.version, f.name, f.checksum, nil); err != nil {
+			if err := r.recordApplied(ctx, tx, f.version, f.name, f.checksum); err != nil {
 				_ = tx.Rollback(ctx) // best-effort: the Exec/recordApplied error above is what we return
 				return fmt.Errorf("migration %s: %w", f.version, err)
 			}
@@ -183,7 +183,7 @@ func (r *Runner) migrateLocked(ctx context.Context, pool *pgxpool.Pool, migratio
 					return fmt.Errorf("migration %s: %w", f.version, err)
 				}
 			}
-			if err := r.recordApplied(ctx, pool, f.version, f.name, f.checksum, nil); err != nil {
+			if err := r.recordApplied(ctx, pool, f.version, f.name, f.checksum); err != nil {
 				return fmt.Errorf("migration %s: %w", f.version, err)
 			}
 		}

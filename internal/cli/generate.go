@@ -34,6 +34,7 @@ type generateOptions struct {
 	Sequential   bool
 	MigrationDir string
 	Idempotent   bool
+	Verbose      bool
 
 	// ConfirmDestructive is called when destructive changes are detected and
 	// Force is false. Returning true proceeds; false aborts. When nil, the
@@ -98,9 +99,18 @@ func generatePipeline(ctx context.Context, opts generateOptions, pool *pgxpool.P
 		}
 		snapshot, serr := r.LoadSnapshot(ctx, pool)
 		if serr == nil && len(snapshot) > 0 {
+			if opts.Verbose {
+				dim(fmt.Sprintf("Loaded snapshot: %d bytes", len(snapshot)))
+			}
 			if err := json.Unmarshal(snapshot, &oldTree); err != nil {
 				return nil, fmt.Errorf("parsing snapshot: %w", err)
 			}
+			if opts.Verbose {
+				dim(fmt.Sprintf("Parsed snapshot: %d tables, %d enums",
+					len(oldTree.Tables), len(oldTree.Enums)))
+			}
+		} else if opts.Verbose {
+			dim(fmt.Sprintf("No snapshot found (err=%v, bytes=%d)", serr, len(snapshot)))
 		}
 	}
 
@@ -257,6 +267,7 @@ func cmdGenerate() *cli.Command {
 				Sequential:         cmd.Bool("sequential-naming"),
 				MigrationDir:       migrationsDir,
 				Idempotent:         cmd.Bool("idempotent"),
+				Verbose:            verbose,
 				ConfirmRename:      makeRenameConfirmer(dryRun),
 				ConfirmDestructive: makeDestructiveConfirmer(dryRun),
 			}

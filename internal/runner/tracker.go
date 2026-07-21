@@ -86,10 +86,10 @@ type txOrPool interface {
 	Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error)
 }
 
-func (r *Runner) recordApplied(ctx context.Context, e txOrPool, version, name, checksum string, snapshot any) error {
+func (r *Runner) recordApplied(ctx context.Context, e txOrPool, version, name, checksum string) error {
 	_, err := e.Exec(ctx,
 		r.dialect.RecordAppliedSQL(),
-		version, name, checksum, snapshot,
+		version, name, checksum,
 	)
 	return err
 }

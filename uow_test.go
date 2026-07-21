@@ -82,6 +82,12 @@ func TestUnitOfWork_Rollback(t *testing.T) {
 	}
 }
 
+// TestUnitOfWork_NestedDo exists because round 4 found that nested Do() calls
+// used the same transaction instead of creating a savepoint, causing the inner
+// failure to roll back the entire outer transaction. This test guards against
+// that regression: the inner Do fails, but the outer Do's commit must still
+// succeed, proving the inner scope was isolated via a savepoint.
+
 func TestUnitOfWork_NestedDo(t *testing.T) {
 	pool := setupTestDB(t)
 	uow := NewUnitOfWork(pool)

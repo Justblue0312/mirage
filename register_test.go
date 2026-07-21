@@ -198,6 +198,48 @@ func TestRegisterRejectsUnsupportedType(t *testing.T) {
 	}
 }
 
+func TestRegistry_InstancesAreIsolated(t *testing.T) {
+	ResetRegistry()
+	defer ResetRegistry()
+
+	priv := NewRegistry()
+	if err := priv.Register(Function{Name: "only_on_private"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := priv.Functions(); len(got) != 1 {
+		t.Fatalf("private registry should see its own registration, got %d", len(got))
+	}
+	if got := GetRegisteredFunctions(); len(got) != 0 {
+		t.Fatalf("private registry must not leak into the global registry, got %d", len(got))
+	}
+
+	if err := Register(Function{Name: "only_on_global"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := priv.Functions(); len(got) != 1 {
+		t.Fatalf("global registration must not leak into private instance, got %d", len(got))
+	}
+}
+
+func TestRegisterAndGetExtensions(t *testing.T) {
+	ResetRegistry()
+	defer ResetRegistry()
+
+	Register(Extension{Name: "uuid-ossp", Schema: "public", Version: "1.1"})
+
+	exts := GetRegisteredExtensions()
+	if len(exts) != 1 {
+		t.Fatalf("expected 1 extension, got %d", len(exts))
+	}
+	if exts[0].Name != "uuid-ossp" {
+		t.Errorf("expected uuid-ossp, got %s", exts[0].Name)
+	}
+	if exts[0].Version != "1.1" {
+		t.Errorf("expected 1.1, got %s", exts[0].Version)
+	}
+}
+
 func TestResetRegistryClearsAll(t *testing.T) {
 	Register(Function{Name: "fn1"})
 	if len(GetRegisteredFunctions()) != 1 {
