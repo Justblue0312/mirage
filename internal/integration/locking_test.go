@@ -127,6 +127,7 @@ func TestLock_SkipLocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
+	defer tx.Rollback(ctx)
 	_, err = tx.Exec(ctx, `SELECT * FROM lock_widgets_test WHERE id = 1 FOR UPDATE`)
 	if err != nil {
 		t.Fatalf("locking row 1: %v", err)
@@ -151,9 +152,6 @@ func TestLock_SkipLocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transaction: %v", err)
 	}
-
-	// Clean up the holding transaction.
-	_ = tx.Rollback(ctx)
 }
 
 // TestLock_NoWait verifies that NOWAIT fails immediately when the row
@@ -182,6 +180,7 @@ func TestLock_NoWait(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
+	defer tx.Rollback(ctx)
 	_, err = tx.Exec(ctx, `SELECT * FROM lock_widgets_test WHERE id = 1 FOR UPDATE`)
 	if err != nil {
 		t.Fatalf("locking row 1: %v", err)
@@ -200,8 +199,6 @@ func TestLock_NoWait(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transaction: %v", err)
 	}
-
-	_ = tx.Rollback(ctx)
 }
 
 // TestLock_CacheBypass verifies that SelectByIDForUpdate never reads from
