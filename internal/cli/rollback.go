@@ -19,7 +19,7 @@ func cmdRollback() *cli.Command {
 		Usage:     "roll back the last N migrations (default 1)",
 		ArgsUsage: "[N]",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "db", Usage: "database connection string", Required: true},
+			&cli.StringFlag{Name: "db", Usage: "database connection string"},
 			&cli.StringFlag{Name: "dir", Value: "./migrations", Usage: "migrations directory"},
 			&cli.BoolFlag{Name: "force", Usage: "skip confirmation prompt"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "print down statements without applying"},
@@ -32,7 +32,22 @@ func cmdRollback() *cli.Command {
 				}
 			}
 
+			connStr := cmd.String("db")
+			if !cmd.IsSet("db") {
+				if cfg := cfgDB(); cfg != "" {
+					connStr = cfg
+				}
+			}
+			if connStr == "" {
+				return fmt.Errorf("--db is required (or set db in mirage.yaml)")
+			}
+
 			dir := cmd.String("dir")
+			if !cmd.IsSet("dir") {
+				if cfg := cfgMigrationsDir(); cfg != "" {
+					dir = cfg
+				}
+			}
 
 			if cmd.Bool("dry-run") {
 				// Dry-run: no confirmation needed, just print what would happen.
@@ -54,8 +69,6 @@ func cmdRollback() *cli.Command {
 							"re-run with --force to proceed non-interactively")
 				}
 			}
-
-			connStr := cmd.String("db")
 
 			pool, err := pgxpool.New(ctx, connStr)
 			if err != nil {

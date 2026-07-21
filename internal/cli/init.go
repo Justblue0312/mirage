@@ -29,8 +29,14 @@ func cmdInit() *cli.Command {
 			}
 			success("Created migrations/")
 
-			if cmd.String("db") != "" {
-				pool, err := pgxpool.New(ctx, cmd.String("db"))
+			connStr := cmd.String("db")
+			if !cmd.IsSet("db") {
+				if cfg := cfgDB(); cfg != "" {
+					connStr = cfg
+				}
+			}
+			if connStr != "" {
+				pool, err := pgxpool.New(ctx, connStr)
 				if err != nil {
 					return fmt.Errorf("connecting to db: %w", err)
 				}

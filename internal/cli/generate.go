@@ -234,19 +234,37 @@ func cmdGenerate() *cli.Command {
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			dirs := cmd.StringSlice("source")
 			if len(dirs) == 0 {
+				dirs = cfgSource()
+			}
+			if len(dirs) == 0 {
 				return fmt.Errorf("--source is required (e.g. --source ./internal/models)")
 			}
 
 			migrationsDir := cmd.String("migrations-dir")
+			if !cmd.IsSet("migrations-dir") {
+				if cfg := cfgMigrationsDir(); cfg != "" {
+					migrationsDir = cfg
+				}
+			}
 			dryRun := cmd.Bool("dry-run")
 			verbose := cmd.Bool("verbose")
+			if !cmd.IsSet("verbose") && cfgVerbose() {
+				verbose = true
+			}
 
 			if err := os.MkdirAll(migrationsDir, 0755); err != nil {
 				return fmt.Errorf("creating migrations directory: %w", err)
 			}
 
+			connStr := cmd.String("db")
+			if !cmd.IsSet("db") {
+				if cfg := cfgDB(); cfg != "" {
+					connStr = cfg
+				}
+			}
+
 			var pool *pgxpool.Pool
-			if connStr := cmd.String("db"); connStr != "" {
+			if connStr != "" {
 				var err error
 				pool, err = pgxpool.New(ctx, connStr)
 				if err != nil {
@@ -257,16 +275,21 @@ func cmdGenerate() *cli.Command {
 				dim("No --db flag, treating as first run")
 			}
 
+			idempotent := cmd.Bool("idempotent")
+			if !cmd.IsSet("idempotent") && cfgIdempotent() {
+				idempotent = true
+			}
+
 			opts := generateOptions{
 				SourceDirs:         dirs,
 				Recursive:          cmd.Bool("recursive"),
-				ConnString:         cmd.String("db"),
+				ConnString:         connStr,
 				ResetState:         cmd.Bool("reset-state"),
 				Force:              cmd.Bool("force"),
 				Message:            cmd.String("message"),
 				Sequential:         cmd.Bool("sequential-naming"),
 				MigrationDir:       migrationsDir,
-				Idempotent:         cmd.Bool("idempotent"),
+				Idempotent:         idempotent,
 				Verbose:            verbose,
 				ConfirmRename:      makeRenameConfirmer(dryRun),
 				ConfirmDestructive: makeDestructiveConfirmer(dryRun),

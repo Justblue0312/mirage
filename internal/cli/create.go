@@ -24,6 +24,11 @@ func cmdCreate() *cli.Command {
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			dir := cmd.String("dir")
+			if !cmd.IsSet("dir") {
+				if cfg := cfgMigrationsDir(); cfg != "" {
+					dir = cfg
+				}
+			}
 
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return fmt.Errorf("creating migrations directory: %w", err)

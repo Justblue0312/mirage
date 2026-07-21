@@ -15,11 +15,17 @@ func cmdValidate() *cli.Command {
 		Name:  "validate",
 		Usage: "validate model struct tags",
 		Flags: []cli.Flag{
-			&cli.StringSliceFlag{Name: "source", Usage: "source dir(s) to scan", Required: true},
+			&cli.StringSliceFlag{Name: "source", Usage: "source dir(s) to scan"},
 			&cli.BoolFlag{Name: "recursive", Aliases: []string{"r"}, Usage: "scan subdirectories recursively"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			dirs := cmd.StringSlice("source")
+			if len(dirs) == 0 {
+				dirs = cfgSource()
+			}
+			if len(dirs) == 0 {
+				return fmt.Errorf("--source is required (e.g. --source ./internal/models)")
+			}
 
 			s := &scanner.Scanner{SourceDirs: dirs, Recursive: cmd.Bool("recursive")}
 			pkg, err := s.Scan()

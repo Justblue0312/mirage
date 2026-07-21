@@ -27,7 +27,19 @@ func cmdStatus() *cli.Command {
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			dir := cmd.String("dir")
+			if !cmd.IsSet("dir") {
+				if cfg := cfgMigrationsDir(); cfg != "" {
+					dir = cfg
+				}
+			}
+
 			connStr := cmd.String("db")
+			if !cmd.IsSet("db") {
+				if cfg := cfgDB(); cfg != "" {
+					connStr = cfg
+				}
+			}
+
 			checkDrift := cmd.Bool("check-drift")
 
 			if checkDrift && connStr == "" {

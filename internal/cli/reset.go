@@ -18,10 +18,19 @@ func cmdReset() *cli.Command {
 		Name:  "reset",
 		Usage: "clear all migration records from the database",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "db", Usage: "database connection string", Required: true},
+			&cli.StringFlag{Name: "db", Usage: "database connection string"},
 			&cli.BoolFlag{Name: "force", Usage: "skip confirmation"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			connStr := cmd.String("db")
+			if !cmd.IsSet("db") {
+				if cfg := cfgDB(); cfg != "" {
+					connStr = cfg
+				}
+			}
+			if connStr == "" {
+				return fmt.Errorf("--db is required (or set db in mirage.yaml)")
+			}
 			if !cmd.Bool("force") {
 				if isTTY(os.Stdin.Fd()) {
 					fmt.Print("This will delete all schema_migrations rows. Type 'yes' to confirm: ")
@@ -40,8 +49,6 @@ func cmdReset() *cli.Command {
 							"re-run with --force to proceed non-interactively")
 				}
 			}
-
-			connStr := cmd.String("db")
 
 			pool, err := pgxpool.New(ctx, connStr)
 			if err != nil {
