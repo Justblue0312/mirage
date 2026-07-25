@@ -847,6 +847,257 @@ var _ = mirage.Register(mirage.Extension{
 // The scanner fans out over goroutines and previously appended Tables/Grants/
 // Policies in goroutine-completion order, making output nondeterministic and
 // breaking the reflect.DeepEqual / JSON fast-path in the diff engine.
+func TestParseFile_TableConfig_InInit(t *testing.T) {
+	src := `package test
+
+import mirage "github.com/justblue/mirage"
+
+type User struct {
+	ID   int64  ` + "`" + `db:"pk,type:bigserial"` + "`" + `
+	Name string ` + "`" + `db:"name=name,type:text"` + "`" + `
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "User",
+		Name:       "app_users",
+		Comment:    "Application users",
+	})
+}`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var tableDecl *RawDecl
+	for i := range decls {
+		if decls[i].Kind == DeclTable && decls[i].GoName == "User" {
+			tableDecl = &decls[i]
+		}
+	}
+	if tableDecl == nil {
+		t.Fatal("expected DeclTable for User")
+	}
+	if tableDecl.TableAttrs.String("name", "") != "app_users" {
+		t.Errorf("expected table name %q, got %q", "app_users", tableDecl.TableAttrs.String("name", ""))
+	}
+	if tableDecl.TableAttrs.String("comment", "") != "Application users" {
+		t.Errorf("expected comment %q, got %q", "Application users", tableDecl.TableAttrs.String("comment", ""))
+	}
+	if len(tableDecl.Fields) != 2 {
+		t.Errorf("expected 2 fields, got %d", len(tableDecl.Fields))
+	}
+}
+
+func TestParseFile_TableConfig_AllAttributes(t *testing.T) {
+	src := `package test
+
+import mirage "github.com/justblue/mirage"
+
+type Widget struct {
+	ID int64 ` + "`" + `db:"pk,type:bigserial"` + "`" + `
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "Widget",
+		Name:       "widgets",
+		SearchPath: "inventory",
+		Comment:    "Product widgets",
+		Options:    "UNLOGGED",
+		Type:       "base table",
+		Partition:  []string{"RANGE", "id"},
+		Ignore:     false,
+	})
+}`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var tableDecl *RawDecl
+	for i := range decls {
+		if decls[i].Kind == DeclTable && decls[i].GoName == "Widget" {
+			tableDecl = &decls[i]
+		}
+	}
+	if tableDecl == nil {
+		t.Fatal("expected DeclTable for Widget")
+	}
+
+	tests := []struct {
+		key, want string
+	}{
+		{"name", "widgets"},
+		{"schema", "inventory"},
+		{"comment", "Product widgets"},
+		{"options", "UNLOGGED"},
+		{"type", "base table"},
+	}
+	for _, tt := range tests {
+		if got := tableDecl.TableAttrs.String(tt.key, ""); got != tt.want {
+			t.Errorf("attr %q = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+
+	part := tableDecl.TableAttrs.Args("partitioned")
+	if len(part) != 2 || part[0] != "RANGE" || part[1] != "id" {
+		t.Errorf("partition = %v, want [RANGE id]", part)
+	}
+
+	if tableDecl.TableAttrs.Has("ignore") {
+		t.Error("ignore should not be set")
+	}
+}
+
+func TestParseFile_StructWithoutTableConfig(t *testing.T) {
+	src := `package test
+
+type Orphan struct {
+	ID int64 ` + "`" + `db:"pk,type:bigserial"` + "`" + `
+	Name string ` + "`" + `db:"name=name,type:text"` + "`" + `
+}`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("expected 1 decl, got %d", len(decls))
+	}
+	if decls[0].Kind != DeclEmbeddable {
+		t.Errorf("expected DeclEmbeddable, got %v", decls[0].Kind)
+	}
+	if decls[0].GoName != "Orphan" {
+		t.Errorf("GoName = %q, want Orphan", decls[0].GoName)
+	}
+}
+
+func TestParseFile_TableConfig_Ignore(t *testing.T) {
+	src := `package test
+
+import mirage "github.com/justblue/mirage"
+
+type Secret struct {
+	ID int64 ` + "`" + `db:"pk,type:bigserial"` + "`" + `
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "Secret",
+		Name:       "secrets",
+		Ignore:     true,
+	})
+}`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var tableDecl *RawDecl
+	for i := range decls {
+		if decls[i].Kind == DeclTable && decls[i].GoName == "Secret" {
+			tableDecl = &decls[i]
+		}
+	}
+	if tableDecl == nil {
+		t.Fatal("expected DeclTable for Secret")
+	}
+	if !tableDecl.TableAttrs.Has("ignore") {
+		t.Error("expected ignore flag to be set")
+	}
+	if tableDecl.TableAttrs.String("name", "") != "secrets" {
+		t.Errorf("name = %q, want secrets", tableDecl.TableAttrs.String("name", ""))
+	}
+}
+
+func TestScan_TableConfig_Pipeline(t *testing.T) {
+	dir := t.TempDir()
+
+	src := `package models
+
+import mirage "github.com/justblue/mirage"
+
+type User struct {
+	ID    int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
+	Name  string ` + "`" + `db:"name=name,type=varchar(100),notnull"` + "`" + `
+	Email string ` + "`" + `db:"name=email,type=varchar(255),notnull,unique"` + "`" + `
+}
+
+type InternalConfig struct {
+	Key string ` + "`" + `db:"pk,type=text"` + "`" + `
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "User",
+		Name:       "app_users",
+		Comment:    "Application users table",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "InternalConfig",
+		Name:       "internal_config",
+		Ignore:     true,
+	})
+}`
+	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Scanner{SourceDirs: []string{dir}}
+	pkg, err := s.Scan()
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	if len(pkg.Tables) != 1 {
+		t.Fatalf("expected 1 non-ignored table, got %d", len(pkg.Tables))
+	}
+
+	tbl := pkg.Tables[0]
+	if tbl.Name != "app_users" {
+		t.Errorf("table name = %q, want app_users", tbl.Name)
+	}
+	if tbl.StructName != "User" {
+		t.Errorf("StructName = %q, want User", tbl.StructName)
+	}
+	if tbl.Description != "Application users table" {
+		t.Errorf("Description = %q, want 'Application users table'", tbl.Description)
+	}
+	if len(tbl.Columns) != 3 {
+		t.Fatalf("expected 3 columns, got %d", len(tbl.Columns))
+	}
+
+	colNames := make(map[string]bool)
+	for _, c := range tbl.Columns {
+		colNames[c.Name] = true
+	}
+	for _, want := range []string{"id", "name", "email"} {
+		if !colNames[want] {
+			t.Errorf("missing column %q", want)
+		}
+	}
+}
+
 func TestScan_Deterministic(t *testing.T) {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
