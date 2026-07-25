@@ -715,7 +715,7 @@ For test isolation or multi-schema setups, create a custom registry with `NewReg
 
 ```go
 customReg := mirage.NewRegistry()
-customReg.Register(mirage.Table{StructName: "Widget", Name: "schema_a.widgets"})
+customReg.Register(mirage.TableConfig{StructName: "Widget", Name: "schema_a.widgets"})
 repo := mirage.NewRepository[Widget](db, mirage.WithRegistry(customReg))
 ```
 

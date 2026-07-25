@@ -732,7 +732,7 @@ By default, repositories resolve table names from the global registry. For test 
 
 ```go
 customReg := mirage.NewRegistry()
-mirage.Register(mirage.Table{StructName: "Widget", Name: "schema_a.widgets"})
+customReg.Register(mirage.TableConfig{StructName: "Widget", Name: "schema_a.widgets"})
 repo := mirage.NewRepository[Widget](db, mirage.WithRegistry(customReg))
 ```
 
