@@ -25,14 +25,18 @@ Initialize mirage in your project:
 mirage init --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ```
 
-Define your models using Go structs with `db` struct tags:
+Define your models using Go structs with `db` struct tags, and register the table in an `init()` block:
 
 ```go
 package models
 
-type User struct {
-    _ struct{} `db:"name=users"`
+import "github.com/justblue/mirage"
 
+func init() {
+    mirage.Register(mirage.Table{StructName: "User", Name: "users"})
+}
+
+type User struct {
     ID        int64     `db:"pk,identity,type=bigserial"`
     Email     string    `db:"name=email,type=varchar(255),unique,notnull"`
     Name      string    `db:"name=name,type=varchar(100),notnull"`
@@ -66,9 +70,11 @@ import (
     mirage "github.com/justblue/mirage"
 )
 
-type User struct {
-    _ struct{} `db:"name=users"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "User", Name: "users"})
+}
 
+type User struct {
     ID    int64  `db:"pk,identity,type=bigserial"`
     Name  string `db:"name=name,type=varchar(100),notnull"`
     Email string `db:"name=email,type=varchar(255),unique,notnull"`
@@ -92,7 +98,7 @@ func main() {
     }
     fmt.Printf("Created user with ID: %d\n", user.ID)
 
-    // Select by ID (transparent cache when configured)
+    // Select by ID
     found, err := repo.SelectByID(ctx, user.ID)
     if err != nil {
         log.Fatal(err)
@@ -210,16 +216,20 @@ Drift is detected for: tables (added/dropped columns, renamed columns), enums (a
 
 ### Table Declaration
 
-Every model struct needs a blank `_` field with a `db` tag to declare the table name:
+Register the table name via `mirage.Register(mirage.Table{...})` in an `init()` block or package-level `var`:
 
 ```go
-type User struct {
-    _ struct{} `db:"name=users,comment=User accounts"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "User", Name: "users", Comment: "User accounts"})
+}
 
+type User struct {
     ID int64 `db:"pk,identity,type=bigserial"`
     // ...
 }
 ```
+
+The `Table` struct supports: `StructName` (required, matches the Go struct name), `Name` (table name), `SearchPath`, `Comment`, `Options` (e.g. `WITH (fillfactor=70)`), `Type` (`"TEMPORARY"`), `Partition` (e.g. `[]string{"RANGE", "created_at"}`), and `Ignore` (skip in migration generation).
 
 ### Column Tags
 
@@ -247,11 +257,13 @@ type User struct {
 Some tags accept parenthesized arguments for composite or multi-value options:
 
 ```go
-type Order struct {
-    _ struct{} `db:"name=orders,partitioned(RANGE,created_at)"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "Order", Name: "orders", Partition: []string{"RANGE", "created_at"}})
+}
 
-    ID       int64 `db:"pk,identity,type=bigserial"`
-    UserID   int64 `db:"name=user_id,type=bigint,notnull,ref=users.id ON DELETE RESTRICT"`
+type Order struct {
+    ID         int64 `db:"pk,identity,type=bigserial"`
+    UserID     int64 `db:"name=user_id,type=bigint,notnull,ref=users.id ON DELETE RESTRICT"`
     TotalCents int64 `db:"name=total_cents,type=bigint,notnull,check=total_cents >= 0"`
 }
 ```
@@ -259,9 +271,11 @@ type Order struct {
 ### Full Example
 
 ```go
-type User struct {
-    _ struct{} `db:"name=users,comment=User accounts"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "User", Name: "users", Comment: "User accounts"})
+}
 
+type User struct {
     ID        int64     `db:"pk,identity,type=bigserial"`
     Email     string    `db:"name=email,type=varchar(255),unique,notnull"`
     Name      string    `db:"name=name,type=varchar(100),notnull"`
@@ -392,7 +406,7 @@ db := mirage.OpenPool(pool)
 
 ### CRUD Operations
 
-Table definitions are automatically derived from struct tags on first use. No manual registration needed.
+Table definitions are derived from struct tags at first use and resolved through the registry. Caching is the application's responsibility — mirage does not include a built-in cache layer.
 
 ```go
 // Create a repository
@@ -414,7 +428,7 @@ err = repo.Upsert(ctx, user, "DO UPDATE SET name = EXCLUDED.name")
 // Upsert many
 err = repo.UpsertMany(ctx, []*User{user1, user2}, "DO UPDATE SET name = EXCLUDED.name")
 
-// Select by ID (transparent cache when configured)
+// Select by ID
 found, err := repo.SelectByID(ctx, 42)
 
 // Exists
@@ -447,10 +461,6 @@ users, err := repo.Query(ctx, "SELECT * FROM users WHERE active = $1", true)
 
 // Single row query
 user, err = repo.QuerySingle(ctx, "SELECT * FROM users WHERE email = $1", "alice@example.com")
-
-// Query with cache
-users, err = repo.QueryWithCache(ctx, "users:active", 5*time.Minute,
-    "SELECT * FROM users WHERE active = $1", true)
 
 // Sanitize SQL identifier
 safe := mirage.QuoteIdentifier("users")
@@ -546,25 +556,6 @@ closer, err := db.ListenTable(ctx, &mirage.ListenTableOptions{
 defer closer.Close(ctx)
 ```
 
-### Caching
-
-```go
-// Enable transparent caching for SelectByID and Exists
-cache := mirage.NewInMemoryCache()
-repo := mirage.NewRepository[User](db, mirage.WithCacheJitter(cache, 5*time.Minute, 6*time.Minute))
-
-// SelectByID and Exists auto-use the cache
-user, err := repo.SelectByID(ctx, 42)
-
-// Explicit cache for custom queries
-users, err := repo.QueryWithCache(ctx, "users:active", 5*time.Minute,
-    `SELECT * FROM users WHERE active = $1`, true)
-
-// Invalidate cache after mutations (automatic on Insert/Update/Delete)
-// or manually:
-err = repo.InvalidateCache(ctx, "users:")
-```
-
 ### Row-Level Locking
 
 ```go
@@ -582,7 +573,7 @@ users, err := repo.QueryForUpdate(ctx, mirage.ForUpdate(),
     "SELECT * FROM users WHERE status = $1 FOR UPDATE", "active")
 ```
 
-Locking never reads from cache and bypasses the repository cache entirely. When inside a transaction, the lock is held until the transaction commits or rolls back.
+When inside a transaction, the lock is held until the transaction commits or rolls back.
 
 ### Retry Helpers
 
@@ -722,15 +713,16 @@ mirage.SetDefaultSearchPath("myschema")
 
 ### Custom Table Names
 
+The table name resolution order is: registry (`mirage.Register(mirage.Table{...})`) → `TableName()` interface → pluralized snake_case of the struct name.
+
 ```go
-// Implement TableNamer to override auto-derived table name
+// Implement TableNamer to override the registered or auto-derived name
 type SpecialItem struct {
-    _ struct{} `db:"special_items"`
-    ID int64   `db:"pk,identity,type=bigserial"`
+    ID int64 `db:"pk,identity,type=bigserial"`
 }
 
 func (SpecialItem) TableName() string {
-    return "special_items" // overrides pluralized snake_case
+    return "special_items"
 }
 ```
 

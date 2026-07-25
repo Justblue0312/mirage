@@ -21,11 +21,16 @@ All models use Go struct tags with the `db` key to define schema. Database objec
 ```go
 package models
 
-import "time"
+import (
+    "time"
+    "github.com/justblue/mirage"
+)
+
+func init() {
+    mirage.Register(mirage.Table{StructName: "User", Name: "users"})
+}
 
 type User struct {
-    _ struct{} `db:"name=users"`
-
     ID        int64     `db:"pk,identity,type=bigserial"`
     Email     string    `db:"name=email,type=varchar(255),unique,notnull"`
     Name      string    `db:"name=name,type=varchar(100),notnull"`
@@ -37,9 +42,11 @@ type User struct {
 ### Foreign Keys
 
 ```go
-type Order struct {
-    _ struct{} `db:"name=orders"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "Order", Name: "orders"})
+}
 
+type Order struct {
     ID     int64   `db:"pk,identity,type=bigserial"`
     UserID int64   `db:"name=user_id,type=bigint,notnull,ref=users.id ON DELETE CASCADE"`
     Total  float64 `db:"name=total,type=numeric(10,2),notnull,check=total >= 0"`
@@ -60,9 +67,11 @@ const (
     OrderCancelled OrderStatus = "cancelled"
 )
 
-type Order struct {
-    _ struct{} `db:"name=orders"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "Order", Name: "orders"})
+}
 
+type Order struct {
     ID     int64       `db:"pk,identity,type=bigserial"`
     Status OrderStatus `db:"name=status,type=order_status,notnull,default='pending'"`
 }
@@ -71,9 +80,11 @@ type Order struct {
 ### Indexes
 
 ```go
-type Product struct {
-    _ struct{} `db:"name=products"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "Product", Name: "products"})
+}
 
+type Product struct {
     ID    int64  `db:"pk,identity,type=bigserial"`
     Name  string `db:"name=name,type=varchar(200),notnull"`
     Tags  string `db:"name=tags,type=tsvector,index=gin"`
@@ -84,9 +95,11 @@ type Product struct {
 ### Partitioned Tables
 
 ```go
-type Event struct {
-    _ struct{} `db:"name=events,partitioned(RANGE,created_at)"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "Event", Name: "events", Partition: []string{"RANGE", "created_at"}})
+}
 
+type Event struct {
     ID        int64     `db:"pk,identity,type=bigserial"`
     CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull"`
     Payload   string    `db:"name=payload,type=jsonb"`
@@ -342,17 +355,17 @@ ctx := context.Background()
 
 // From connection string
 db, err := mirage.Open(ctx,
-    "postgres://user:pass@localhost:5432/mydb?sslmode=disable&search_path=public",
-    mirage.WithLogger(logger),
-)
-if err != nil {
-    log.Fatal(err)
-}
-defer db.Close()
+        "postgres://user:pass@localhost:5432/mydb?sslmode=disable&search_path=public",
+        mirage.WithLogger(logger),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
 
-// From existing pgxpool
-pool, _ := pgxpool.New(ctx, connStr)
-db = mirage.OpenPool(pool)
+    // From existing pgxpool
+    pool, _ := pgxpool.New(ctx, connStr)
+    db = mirage.OpenPool(pool)
 ```
 
 ### Insert
@@ -371,7 +384,7 @@ err = repo.InsertMany(ctx, []*User{user1, user2, user3})
 ### Select
 
 ```go
-// By primary key (transparent cache when configured)
+// By primary key
 found, err := repo.SelectByID(ctx, 42)
 
 // With raw SQL
@@ -504,7 +517,7 @@ users, err := repo.QueryForUpdate(ctx, mirage.ForShare(),
 
 Lock options: `ForUpdate()`, `ForNoKeyUpdate()`, `ForShare()`, `ForKeyShare()`, `ForUpdateSkipLocked()`, `ForUpdateNoWait()`.
 
-Locking always bypasses cache and is transaction-scoped — the lock is held until the transaction commits or rolls back.
+The lock is held until the transaction commits or rolls back.
 
 ### Retry Helpers
 
@@ -546,25 +559,6 @@ _, err = repo.InsertReturning(ctx, &User{Name: "Alice"})
 
 // Commit everything together
 err = uow.Commit(ctx)
-```
-
-### Caching
-
-```go
-// Enable transparent caching for SelectByID and Exists
-cache := mirage.NewInMemoryCache()
-repo := mirage.NewRepository[User](db, mirage.WithCacheJitter(cache, 5*time.Minute, 6*time.Minute))
-
-// SelectByID and Exists auto-use the cache
-user, err := repo.SelectByID(ctx, 42)
-
-// Explicit cache for custom queries
-users, err := repo.QueryWithCache(ctx, "users:active", 5*time.Minute,
-    "SELECT * FROM users WHERE active = $1", true)
-
-// Invalidate cache after mutations (automatic on Insert/Update/Delete)
-// or manually:
-err = repo.InvalidateCache(ctx, "users:")
 ```
 
 ### Executing Embedded SQL Files
@@ -704,14 +698,14 @@ fmt.Printf("Acquired: %d / %d, Idle: %d\n",
 
 ### Custom Table Names
 
-Implement the `TableNamer` interface to override the auto-derived table name:
+Table name resolution order: registry (`mirage.Register(mirage.Table{...})`) → `TableName()` interface → pluralized snake_case of the struct name.
 
 ```go
-type SpecialItem struct {
-    ID int64 `db:"pk,identity,type=bigserial"`
+func init() {
+    mirage.Register(mirage.Table{StructName: "SpecialItem", Name: "special_items"})
 }
 
-func (SpecialItem) TableName() string {
-    return "special_items"
+type SpecialItem struct {
+    ID int64 `db:"pk,identity,type=bigserial"`
 }
 ```

@@ -23,7 +23,7 @@ func TestRepository_NewRepository(t *testing.T) {
 
 func TestRepository_WithRetry(t *testing.T) {
 	type Item struct {
-		ID   int64 `db:"pk,type:bigserial"`
+		ID   int64  `db:"pk,type:bigserial"`
 		Name string `db:"type:text"`
 	}
 
@@ -41,7 +41,7 @@ func TestRepository_WithRetry(t *testing.T) {
 
 func TestRepository_InRetryTransaction(t *testing.T) {
 	type Item struct {
-		ID   int64 `db:"pk,type:bigserial"`
+		ID   int64  `db:"pk,type:bigserial"`
 		Name string `db:"type:text"`
 	}
 

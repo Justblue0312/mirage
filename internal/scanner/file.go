@@ -45,8 +45,8 @@ type RawDecl struct {
 	Procedure        *schema.Procedure
 	Grant            *schema.Grant
 	Policy           *schema.Policy
-	Extension   *schema.Extension
-	TableConfig *schema.TableConfig
+	Extension        *schema.Extension
+	TableConfig      *schema.TableConfig
 }
 
 type RawField struct {
