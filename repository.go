@@ -34,6 +34,7 @@ type RepositoryOption func(*repositoryConfig)
 type repositoryConfig struct {
 	retry        RetryOptions
 	retryEnabled bool
+	registry     *Registry
 }
 
 // WithRetry enables automatic retry of serialization failures and deadlocks
@@ -46,6 +47,15 @@ func WithRetry(opts RetryOptions) RepositoryOption {
 	return func(cfg *repositoryConfig) {
 		cfg.retry = opts
 		cfg.retryEnabled = true
+	}
+}
+
+// WithRegistry uses r for table name resolution instead of the process-global
+// singleton. Pass a fresh *Registry (via NewRegistry()) for test isolation or
+// multi-schema setups. When omitted, the global registry is used.
+func WithRegistry(r *Registry) RepositoryOption {
+	return func(cfg *repositoryConfig) {
+		cfg.registry = r
 	}
 }
 
