@@ -67,7 +67,7 @@ func NewRepository[T any](db *DB, opts ...RepositoryOption) *Repository[T] {
 		typ = typ.Elem()
 	}
 
-	td, err := cachedTable(typ)
+	td, err := cachedTable(typ, nil)
 	if err != nil {
 		panic(fmt.Sprintf("mirage: cannot create repository for %T: %v", zero, err))
 	}

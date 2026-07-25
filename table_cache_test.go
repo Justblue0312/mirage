@@ -18,7 +18,7 @@ func TestResolveTableName_Registry(t *testing.T) {
 	Register(TableConfig{StructName: "testWidget", Name: "custom_widgets"})
 
 	typ := reflect.TypeOf(testWidget{})
-	name := resolveTableName(typ)
+	name := resolveTableName(typ, nil)
 	if name != "custom_widgets" {
 		t.Errorf("expected %q, got %q", "custom_widgets", name)
 	}
@@ -31,7 +31,7 @@ func TestResolveTableName_RegistryOverTableName(t *testing.T) {
 	Register(TableConfig{StructName: "namedWidget", Name: "registry_wins"})
 
 	typ := reflect.TypeOf(namedWidget{})
-	name := resolveTableName(typ)
+	name := resolveTableName(typ, nil)
 	if name != "registry_wins" {
 		t.Errorf("expected %q, got %q", "registry_wins", name)
 	}
@@ -42,7 +42,7 @@ func TestResolveTableName_FallbackToTableName(t *testing.T) {
 	defer ResetRegistry()
 
 	typ := reflect.TypeOf(namedWidget{})
-	name := resolveTableName(typ)
+	name := resolveTableName(typ, nil)
 	if name != "legacy_widgets" {
 		t.Errorf("expected %q, got %q", "legacy_widgets", name)
 	}
@@ -55,7 +55,7 @@ func TestResolveTableName_FallbackToSnakeCase(t *testing.T) {
 	type orderItem struct{}
 
 	typ := reflect.TypeOf(orderItem{})
-	name := resolveTableName(typ)
+	name := resolveTableName(typ, nil)
 	if name != "order_items" {
 		t.Errorf("expected %q, got %q", "order_items", name)
 	}
@@ -70,7 +70,7 @@ func TestResolveTableName_EmptyRegistryName(t *testing.T) {
 	Register(TableConfig{StructName: "gizmo", Name: ""})
 
 	typ := reflect.TypeOf(gizmo{})
-	name := resolveTableName(typ)
+	name := resolveTableName(typ, nil)
 	if name != "gizmos" {
 		t.Errorf("expected %q, got %q", "gizmos", name)
 	}
