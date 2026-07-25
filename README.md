@@ -726,6 +726,18 @@ func (SpecialItem) TableName() string {
 }
 ```
 
+### Registry Isolation
+
+By default, repositories resolve table names from the global registry. For test isolation or multi-tenant setups, create a custom registry and pass it via `WithRegistry`:
+
+```go
+customReg := mirage.NewRegistry()
+mirage.Register(mirage.Table{StructName: "Widget", Name: "schema_a.widgets"})
+repo := mirage.NewRepository[Widget](db, mirage.WithRegistry(customReg))
+```
+
+All registered objects (functions, views, triggers) follow the same `NewRegistry()` pattern — each instance is fully independent.
+
 ### Error Helpers
 
 ```go

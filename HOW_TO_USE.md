@@ -708,4 +708,15 @@ func init() {
 type SpecialItem struct {
     ID int64 `db:"pk,identity,type=bigserial"`
 }
+
+### Registry Isolation
+
+For test isolation or multi-schema setups, create a custom registry with `NewRegistry()` and pass it to the repository with `WithRegistry`:
+
+```go
+customReg := mirage.NewRegistry()
+customReg.Register(mirage.Table{StructName: "Widget", Name: "schema_a.widgets"})
+repo := mirage.NewRepository[Widget](db, mirage.WithRegistry(customReg))
 ```
+
+When `WithRegistry` is omitted, the global singleton registry is used — no behavioral change for existing code.
