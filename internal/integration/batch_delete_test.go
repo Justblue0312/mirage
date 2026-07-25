@@ -15,12 +15,13 @@ import (
 type snowflakeID int64
 
 type gadget struct {
-	_    struct{}    `db:"gadgets_batch_delete_test"`
 	ID   snowflakeID `db:"pk"`
 	Name string      `db:"type:text"`
 }
 
-func (gadget) TableName() string { return "gadgets_batch_delete_test" }
+func init() {
+	_ = mirage.Register(mirage.TableConfig{StructName: "gadget", Name: "gadgets_batch_delete_test"})
+}
 
 // TestRepository_BatchDeleteCustomPKType is the regression/verification test
 // for batch-delete array encoding with a non-trivial PK type. It inserts

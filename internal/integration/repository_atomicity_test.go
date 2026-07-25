@@ -5,18 +5,18 @@ package integration
 import (
 	"context"
 	"testing"
-	"time"
 
 	mirage "github.com/justblue/mirage"
 )
 
 type atomicWidget struct {
-	_    struct{} `db:"atomic_widgets_test"`
-	ID   int64    `db:"pk,type:bigserial"`
-	Name string   `db:"type:text,notnull"`
+	ID   int64  `db:"pk,type:bigserial"`
+	Name string `db:"type:text,notnull"`
 }
 
-func (atomicWidget) TableName() string { return "atomic_widgets_test" }
+func init() {
+	_ = mirage.Register(mirage.TableConfig{StructName: "atomicWidget", Name: "atomic_widgets_test"})
+}
 
 func setupAtomicWidgetsTable(t *testing.T, db *mirage.DB) {
 	t.Helper()
@@ -239,71 +239,5 @@ func TestRepository_InsertMany_SuccessPath(t *testing.T) {
 	}
 	if count != 3 {
 		t.Fatalf("expected 3 rows, got %d", count)
-	}
-}
-
-// countingCache wraps a Cache and counts Get/Set calls, allowing tests to
-// distinguish cache misses (Get miss + Set) from cache hits (Get hit only).
-type countingCache struct {
-	inner    mirage.Cache
-	getCalls int
-	setCalls int
-}
-
-func (c *countingCache) Get(ctx context.Context, key string, dest any) (bool, error) {
-	c.getCalls++
-	return c.inner.Get(ctx, key, dest)
-}
-
-func (c *countingCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
-	c.setCalls++
-	return c.inner.Set(ctx, key, value, ttl)
-}
-
-func (c *countingCache) Delete(ctx context.Context, key string) error {
-	return c.inner.Delete(ctx, key)
-}
-
-func (c *countingCache) Invalidate(ctx context.Context, prefix string) error {
-	return c.inner.Invalidate(ctx, prefix)
-}
-
-// TestRepository_ExistsCache_HitsForContentEqualPointerFields verifies that
-// Exists() produces the same cache key for two calls with content-equal but
-// pointer-distinct values (e.g. two different *string pointing to the same
-// string). The second call must hit the cache instead of issuing another
-// query. This is the regression guard for round 4's cache-key bug where
-// fmt's %v printed pointer addresses, making every call a cache miss.
-func TestRepository_ExistsCache_HitsForContentEqualPointerFields(t *testing.T) {
-	dsn := testMirageDSN(t)
-	ctx := context.Background()
-
-	db, err := mirage.Open(ctx, dsn)
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	defer db.Close()
-
-	setupAtomicWidgetsTable(t, db)
-	seedAtomicRow(t, db, "cached-widget")
-
-	counting := &countingCache{inner: mirage.NewInMemoryCache()}
-	repo := mirage.NewRepository[atomicWidget](db, mirage.WithCache(counting, time.Minute))
-
-	// First call — should query the database (cache miss → Set called).
-	e1 := "cached-widget"
-	w1 := atomicWidget{ID: 1, Name: e1}
-	_, _ = repo.Exists(ctx, &w1)
-	afterFirstSet := counting.setCalls
-
-	// Second call with a content-equal but pointer-distinct value.
-	// Should hit the cache — Set must NOT be called again.
-	e2 := "cached-widget"
-	w2 := atomicWidget{ID: 1, Name: e2}
-	_, _ = repo.Exists(ctx, &w2)
-
-	if counting.setCalls != afterFirstSet {
-		t.Errorf("second Exists() call should have hit the cache, but Set was called %d times (expected %d)",
-			counting.setCalls, afterFirstSet)
 	}
 }

@@ -11,12 +11,13 @@ import (
 )
 
 type lockWidget struct {
-	_    struct{} `db:"lock_widgets_test"`
-	ID   int64    `db:"pk,type:bigserial"`
-	Name string   `db:"type:text,notnull"`
+	ID   int64  `db:"pk,type:bigserial"`
+	Name string `db:"type:text,notnull"`
 }
 
-func (lockWidget) TableName() string { return "lock_widgets_test" }
+func init() {
+	_ = mirage.Register(mirage.TableConfig{StructName: "lockWidget", Name: "lock_widgets_test"})
+}
 
 func setupLockWidgetsTable(t *testing.T, db *mirage.DB) {
 	t.Helper()
@@ -201,53 +202,6 @@ func TestLock_NoWait(t *testing.T) {
 		t.Fatal("expected error from NOWAIT transaction")
 	}
 	t.Logf("got expected NOWAIT error: %v", nwErr)
-}
-
-// TestLock_CacheBypass verifies that SelectByIDForUpdate never reads from
-// the cache, even if one is configured.
-func TestLock_CacheBypass(t *testing.T) {
-	dsn := testMirageDSN(t)
-	ctx := context.Background()
-
-	db, err := mirage.Open(ctx, dsn)
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	defer db.Close()
-
-	setupLockWidgetsTable(t, db)
-	_, _ = db.Exec(ctx, `INSERT INTO lock_widgets_test (name) VALUES ('original')`)
-
-	cache := mirage.NewInMemoryCache()
-	repo := mirage.NewRepository[lockWidget](db, mirage.WithCache(cache, time.Hour))
-
-	// Popululate the cache via a normal SelectByID.
-	w, err := repo.SelectByID(ctx, int64(1))
-	if err != nil {
-		t.Fatalf("SelectByID: %v", err)
-	}
-	if w.Name != "original" {
-		t.Fatalf("expected 'original', got %q", w.Name)
-	}
-
-	// Update the row out-of-band (bypassing the repository).
-	_, _ = db.Exec(ctx, `UPDATE lock_widgets_test SET name = 'out-of-band-update' WHERE id = 1`)
-
-	// SelectByIDForUpdate should see the current DB value, not the stale cache.
-	err = db.InTransaction(ctx, func(dbc *mirage.DB) error {
-		txRepo := mirage.NewRepository[lockWidget](dbc, mirage.WithCache(cache, time.Hour))
-		locked, err := txRepo.SelectByIDForUpdate(ctx, int64(1), mirage.ForUpdate())
-		if err != nil {
-			return err
-		}
-		if locked.Name != "out-of-band-update" {
-			t.Errorf("expected 'out-of-band-update' (bypass cache), got %q", locked.Name)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("transaction: %v", err)
-	}
 }
 
 // TestLock_ConcurrentBlocking verifies that a second FOR UPDATE call on

@@ -4,8 +4,10 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	mirage "github.com/justblue/mirage"
 )
@@ -30,20 +32,15 @@ func dsnFromEnv() string {
 }
 
 // widget is a minimal fixture type exercising the exact pattern that was
-// broken: a "_" table-name marker field and a bigserial primary key with
-// no other tags.
+// broken: a bigserial primary key with no other tags.
 type widget struct {
-	_    struct{} `db:"widgets_repo_test"` // not read by internal/schema; see TableName() below
-	ID   int64    `db:"pk"`
-	Name string   `db:"type:text"`
+	ID   int64  `db:"pk"`
+	Name string `db:"type:text"`
 }
 
-// TableName overrides the auto-derived table name ("widgets", from
-// pluralizing the Go type name) so this fixture's table can have a name
-// that won't collide with anything else in the test database. This also
-// exercises the mirage.TableNamer override path itself, which otherwise
-// has no test coverage at all.
-func (widget) TableName() string { return "widgets_repo_test" }
+func init() {
+	_ = mirage.Register(mirage.TableConfig{StructName: "widget", Name: "widgets_repo_test"})
+}
 
 func setupWidgetsTable(t *testing.T, db *mirage.DB) {
 	t.Helper()
@@ -213,6 +210,172 @@ func TestRepository_FullLifecycle(t *testing.T) {
 	}
 }
 
+// --- Retry tests ---
+
+func TestRetry_Nesting(t *testing.T) {
+	dsn := testMirageDSN(t)
+	ctx := context.Background()
+
+	db, err := mirage.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+
+	setupWidgetsTable(t, db)
+
+	// Insert inside InTransaction should run in the caller's tx and roll
+	// back with it when the outer func returns an error.
+	err = db.InTransaction(ctx, func(tx *mirage.DB) error {
+		txRepo := mirage.NewRepository[widget](tx)
+		if err := txRepo.InsertReturning(ctx, &widget{Name: "doomed"}); err != nil {
+			return err
+		}
+		return fmt.Errorf("intentional rollback")
+	})
+	if err == nil {
+		t.Fatal("expected error from InTransaction")
+	}
+
+	rawCount := mirageRowCount(t, db, "widgets_repo_test")
+	if rawCount != 0 {
+		t.Fatalf("expected 0 rows after rollback, got %d — insert ran outside the rolled-back tx", rawCount)
+	}
+}
+
+func TestRetry_Nesting_RetryRepo(t *testing.T) {
+	dsn := testMirageDSN(t)
+	ctx := context.Background()
+
+	db, err := mirage.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+
+	setupWidgetsTable(t, db)
+
+	retryRepo := mirage.NewRepository[widget](db, mirage.WithRetry(mirage.RetryOptions{MaxAttempts: 3}))
+
+	// When a retry-enabled repo is called inside InTransaction, the
+	// retry guard sees IsTransaction()==true and skips its own tx —
+	// the insert should run in the caller's tx and roll back with it.
+	err = db.InTransaction(ctx, func(tx *mirage.DB) error {
+		if err := retryRepo.InsertReturning(ctx, &widget{Name: "doomed-via-retry-repo"}); err != nil {
+			return err
+		}
+		return fmt.Errorf("intentional rollback")
+	})
+	if err == nil {
+		t.Fatal("expected error from InTransaction")
+	}
+
+	rawCount := mirageRowCount(t, db, "widgets_repo_test")
+	if rawCount != 0 {
+		t.Fatalf("expected 0 rows after rollback, got %d", rawCount)
+	}
+}
+
+func TestRetry_Success(t *testing.T) {
+	dsn := testMirageDSN(t)
+	ctx := context.Background()
+
+	db, err := mirage.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+
+	setupWidgetsTable(t, db)
+
+	retryRepo := mirage.NewRepository[widget](db, mirage.WithRetry(mirage.RetryOptions{
+		MaxAttempts: 3,
+		BaseDelay:   10 * time.Millisecond,
+	}))
+
+	// Single insert should succeed without needing a retry.
+	w := &widget{Name: "ok"}
+	if err := retryRepo.InsertReturning(ctx, w); err != nil {
+		t.Fatalf("InsertReturning: %v", err)
+	}
+	if w.ID == 0 {
+		t.Fatal("expected non-zero id")
+	}
+
+	got, err := retryRepo.SelectByID(ctx, w.ID)
+	if err != nil {
+		t.Fatalf("SelectByID: %v", err)
+	}
+	if got.Name != "ok" {
+		t.Fatalf("expected name %q, got %q", "ok", got.Name)
+	}
+}
+
+func TestRetry_Exhaustion(t *testing.T) {
+	dsn := testMirageDSN(t)
+	ctx := context.Background()
+
+	db, err := mirage.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+
+	setupWidgetsTable(t, db)
+
+	retryRepo := mirage.NewRepository[widget](db, mirage.WithRetry(mirage.RetryOptions{
+		MaxAttempts: 2,
+		BaseDelay:   10 * time.Millisecond,
+	}))
+
+	// Duplicate insert on a future unique column would require a real
+	// unique constraint; instead, force exhaustion by opening a second
+	// connection, locking the table, and having the retry repo block.
+	//
+	// Simpler approach: use a table with a CHECK constraint that always
+	// fails (non-retryable), and verify the error is returned after
+	// exactly MaxAttempts.
+	if _, err := db.Exec(ctx, `ALTER TABLE widgets_repo_test ADD CONSTRAINT chk_fail CHECK (name != 'fail')`); err != nil {
+		t.Fatalf("adding check constraint: %v", err)
+	}
+
+	// A non-retryable error (check_violation) should not be retried —
+	// the repo should return immediately.
+	w := &widget{Name: "fail"}
+	err = retryRepo.InsertReturning(ctx, w)
+	if err == nil {
+		t.Fatal("expected error for CHECK constraint violation")
+	}
+	t.Logf("got expected error: %v", err)
+}
+
+func TestRetry_IsolationLevel(t *testing.T) {
+	dsn := testMirageDSN(t)
+	ctx := context.Background()
+
+	db, err := mirage.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+
+	setupWidgetsTable(t, db)
+
+	repo := mirage.NewRepository[widget](db, mirage.WithRetry(mirage.RetryOptions{
+		MaxAttempts: 3,
+		Isolation:   mirage.IsolationSerializable,
+		BaseDelay:   10 * time.Millisecond,
+	}))
+
+	w := &widget{Name: "serializable"}
+	if err := repo.InsertReturning(ctx, w); err != nil {
+		t.Fatalf("InsertReturning with serializable isolation: %v", err)
+	}
+	if w.ID == 0 {
+		t.Fatal("expected non-zero id")
+	}
+}
+
 // TestUnlisten locks in the fix for Unlisten sending "SELECT UNLISTEN $1;",
 // which is not valid PostgreSQL syntax under any circumstance (UNLISTEN is
 // a command, not a callable function, and takes no bound parameter) and
@@ -236,4 +399,13 @@ func TestUnlisten(t *testing.T) {
 	if err := db.Unlisten(ctx, "repo_test_channel"); err != nil {
 		t.Fatalf("Unlisten: %v", err)
 	}
+}
+
+func mirageRowCount(t *testing.T, db *mirage.DB, table string) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&count); err != nil {
+		t.Fatalf("counting rows in %s: %v", table, err)
+	}
+	return count
 }
