@@ -1,5 +1,5 @@
--- Mirage migration V20260718134512
--- Checksum: sha256:6ed5c322abd891009a42249ac6d1a91e67290178778d0a0a29b39be6ac40f3e3
+-- Mirage migration V20260725160332
+-- Checksum: sha256:c2edf5f9d5293a01972b295a25a505cce68f1be8a524d55028cbf8eac35b8e61
 
 -- +migrate Up
 
@@ -145,7 +145,6 @@ CREATE TABLE IF NOT EXISTS events (
     "metadata_json" jsonb,
     "duration_ms" int,
     "created_at" timestamptz NOT NULL DEFAULT NOW(),
-    CONSTRAINT "pk_events" PRIMARY KEY ("id", "created_at"),
     CONSTRAINT "fk_events_user_id" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE SET NULL
 ) PARTITION BY RANGE ("created_at");
 
@@ -164,7 +163,6 @@ CREATE TABLE IF NOT EXISTS posts (
     "is_pinned" bool DEFAULT false,
     "is_locked" bool DEFAULT false,
     "created_at" timestamptz NOT NULL DEFAULT NOW(),
-    "updated_at" timestamptz NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_posts" PRIMARY KEY ("id"),
     CONSTRAINT "uq_posts_slug" UNIQUE ("slug"),
     CONSTRAINT "fk_posts_user_id" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE

@@ -196,7 +196,26 @@ type RetryOptions struct {
 	// ShouldRetry reports whether the given error is retryable. When nil,
 	// IsErrRetryable is used (serialization failures and deadlocks).
 	ShouldRetry func(error) bool
+	// Isolation sets the transaction isolation level. The default (IsolationDefault)
+	// uses Postgres's default (READ COMMITTED). Set to IsolationSerializable to
+	// enable serialization-failure retries.
+	Isolation IsolationLevel
 }
+
+// IsolationLevel controls the transaction isolation level for retriable transactions.
+type IsolationLevel int
+
+const (
+	// IsolationDefault uses Postgres's default isolation level (READ COMMITTED).
+	IsolationDefault IsolationLevel = iota
+	// IsolationReadCommitted explicitly sets READ COMMITTED.
+	IsolationReadCommitted
+	// IsolationRepeatableRead sets REPEATABLE READ.
+	IsolationRepeatableRead
+	// IsolationSerializable sets SERIALIZABLE — required for serialization
+	// failure retries to be reachable.
+	IsolationSerializable
+)
 
 func (o RetryOptions) withDefaults() RetryOptions {
 	if o.MaxAttempts <= 0 {
@@ -226,7 +245,7 @@ func (db *DB) InTransactionWithRetry(ctx context.Context, opts RetryOptions, fn 
 	}
 
 	return retryLoop(ctx, opts, func() error {
-		return db.InTransaction(ctx, fn)
+		return db.InTransactionWithIsolation(ctx, opts.Isolation, fn)
 	})
 }
 
@@ -279,6 +298,73 @@ func (db *DB) Begin(ctx context.Context) (*DB, error) {
 		return nil, err
 	}
 	return db.clone(tx), nil
+}
+
+func (db *DB) BeginWithIsolation(ctx context.Context, iso IsolationLevel) (*DB, error) {
+	var (
+		tx  pgx.Tx
+		err error
+	)
+	txOpts := pgx.TxOptions{}
+	if iso != IsolationDefault {
+		txOpts.IsoLevel = pgxIsoLevel(iso)
+	}
+	if db.tx != nil {
+		tx, err = db.tx.Begin(ctx)
+	} else {
+		tx, err = db.Pool.BeginTx(ctx, txOpts)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return db.clone(tx), nil
+}
+
+func pgxIsoLevel(iso IsolationLevel) pgx.TxIsoLevel {
+	switch iso {
+	case IsolationReadCommitted:
+		return pgx.ReadCommitted
+	case IsolationRepeatableRead:
+		return pgx.RepeatableRead
+	case IsolationSerializable:
+		return pgx.Serializable
+	default:
+		return pgx.ReadCommitted
+	}
+}
+
+func (db *DB) InTransactionWithIsolation(ctx context.Context, iso IsolationLevel, fn func(*DB) error) (err error) {
+	if db.IsTransaction() {
+		return fn(db)
+	}
+
+	var tx *DB
+	tx, err = db.BeginWithIsolation(ctx, iso)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		bgCtx := context.Background()
+		if p := recover(); p != nil {
+			_ = tx.Rollback(bgCtx)
+			panic(p)
+		} else if err != nil {
+			if errors.Is(err, ErrIntentionalRollback) {
+				err = tx.Rollback(bgCtx)
+				return
+			}
+			rollbackErr := tx.Rollback(bgCtx)
+			if rollbackErr != nil {
+				err = fmt.Errorf("%w: %s", err, rollbackErr.Error())
+			}
+		} else {
+			err = tx.Commit(bgCtx)
+		}
+	}()
+
+	err = fn(tx)
+	return err
 }
 
 func (db *DB) BeginConcurrent(ctx context.Context) (*DB, error) {

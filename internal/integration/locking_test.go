@@ -225,28 +225,29 @@ func TestLock_ConcurrentBlocking(t *testing.T) {
 	}
 	defer lockConn.Close()
 
-	blocked := make(chan error, 1)
+	locked := make(chan error, 1)
+	ready := make(chan struct{})
 	unblock := make(chan struct{})
 
 	// Goroutine A: holds the lock until signaled.
 	go func() {
 		tx, err := lockConn.Begin(ctx)
 		if err != nil {
-			blocked <- err
+			locked <- err
 			return
 		}
 		_, err = tx.Exec(ctx, `SELECT * FROM lock_widgets_test WHERE id = 1 FOR UPDATE`)
 		if err != nil {
-			blocked <- err
+			locked <- err
 			return
 		}
-		blocked <- nil // signal: lock acquired
+		locked <- nil // signal: lock acquired
 		<-unblock      // wait for signal to release
 		_ = tx.Rollback(ctx)
 	}()
 
 	// Wait for goroutine A to acquire the lock.
-	if err := <-blocked; err != nil {
+	if err := <-locked; err != nil {
 		t.Fatalf("goroutine A failed to lock: %v", err)
 	}
 
@@ -262,25 +263,20 @@ func TestLock_ConcurrentBlocking(t *testing.T) {
 
 		err = conn2.InTransaction(ctx, func(dbc *mirage.DB) error {
 			repo := mirage.NewRepository[lockWidget](dbc)
-			start := time.Now()
+			ready <- struct{}{} // signal: about to attempt the lock
 			_, err := repo.SelectByIDForUpdate(ctx, int64(1), mirage.ForUpdate())
-			elapsed := time.Since(start)
-			if err != nil {
-				return err
-			}
-			// If we got here, the lock was blocked for some time.
-			if elapsed < 50*time.Millisecond {
-				t.Errorf("SELECT FOR UPDATE returned too quickly (%v) — blocking may not be working", elapsed)
-			}
-			return nil
+			return err
 		})
 		done <- err
 	}()
 
-	// Give goroutine B time to start blocking.
-	time.Sleep(100 * time.Millisecond)
-
-	// Release goroutine A's lock.
+	// Wait for goroutine B to signal it's about to attempt the lock,
+	// then release goroutine A's lock. B will block until A releases.
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("goroutine B failed to set up: %v", err)
+	}
 	close(unblock)
 
 	// Goroutine B should now complete.

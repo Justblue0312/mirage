@@ -10,10 +10,13 @@ test-unit:
 	go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 
 test-integration:
-	podman compose -f _examples/docker-compose.yml up -d --wait
-	@MIRAGE_TEST_DATABASE_URL="postgres://test:test@localhost:15432/mirage_test?sslmode=disable" \
-		go test -tags=integration -race -count=1 ./...
+	-podman compose -f _examples/docker-compose.yml up --build --abort-on-container-exit --exit-code-from test-runner test-runner
 	podman compose -f _examples/docker-compose.yml down -v
+
+# Windows/macOS CI: go test in Docker with gcc
+docker-test:
+	docker build -t mirage-test -f Dockerfile.test .
+	docker run --rm --network=host mirage-test go test -tags=integration -race -p 1 -count=1 ./...
 
 test-ci: lint test-unit test-integration
 

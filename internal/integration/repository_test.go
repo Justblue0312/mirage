@@ -255,13 +255,12 @@ func TestRetry_Nesting_RetryRepo(t *testing.T) {
 
 	setupWidgetsTable(t, db)
 
-	retryRepo := mirage.NewRepository[widget](db, mirage.WithRetry(mirage.RetryOptions{MaxAttempts: 3}))
-
-	// When a retry-enabled repo is called inside InTransaction, the
-	// retry guard sees IsTransaction()==true and skips its own tx —
-	// the insert should run in the caller's tx and roll back with it.
+	// When a retry-enabled repo is created with the transaction handle,
+	// the retry guard sees IsTransaction()==true and skips its own tx —
+	// the insert runs in the caller's tx and rolls back with it.
 	err = db.InTransaction(ctx, func(tx *mirage.DB) error {
-		if err := retryRepo.InsertReturning(ctx, &widget{Name: "doomed-via-retry-repo"}); err != nil {
+		txRepo := mirage.NewRepository[widget](tx, mirage.WithRetry(mirage.RetryOptions{MaxAttempts: 3}))
+		if err := txRepo.InsertReturning(ctx, &widget{Name: "doomed-via-retry-repo"}); err != nil {
 			return err
 		}
 		return fmt.Errorf("intentional rollback")

@@ -1,41 +1,75 @@
 package mirage
 
 import (
-	"reflect"
 	"testing"
-
-	schemapkg "github.com/justblue/mirage/internal/schema"
 )
 
-func TestExistsCacheKey_ContentEqualPointerFields(t *testing.T) {
+func TestRepository_NewRepository(t *testing.T) {
 	type Widget struct {
-		ID   int64   `json:"id"`
-		Name *string `json:"name"`
+		ID   int64  `db:"pk,type:bigserial"`
+		Name string `db:"type:text"`
 	}
 
-	repo := &Repository[Widget]{
-		table: &schemapkg.Table{Name: "widgets"},
+	db := &DB{searchPath: "public"}
+	repo := NewRepository[Widget](db)
+
+	if repo.table == nil {
+		t.Fatal("expected table to be set")
+	}
+	if repo.table.Name != "widgets" {
+		t.Errorf("expected table name 'widgets', got %q", repo.table.Name)
+	}
+}
+
+func TestRepository_WithRetry(t *testing.T) {
+	type Item struct {
+		ID   int64 `db:"pk,type:bigserial"`
+		Name string `db:"type:text"`
 	}
 
-	e1, e2 := "foo", "foo"
-	k1, err := repo.existsCacheKey(reflect.ValueOf(Widget{ID: 1, Name: &e1}))
-	if err != nil {
-		t.Fatal(err)
+	db := &DB{searchPath: "public"}
+	opts := RetryOptions{MaxAttempts: 5}
+	repo := NewRepository[Item](db, WithRetry(opts))
+
+	if !repo.retryEnabled {
+		t.Error("expected retryEnabled=true")
 	}
-	k2, err := repo.existsCacheKey(reflect.ValueOf(Widget{ID: 1, Name: &e2}))
-	if err != nil {
-		t.Fatal(err)
+	if repo.retry.MaxAttempts != 5 {
+		t.Errorf("expected MaxAttempts=5, got %d", repo.retry.MaxAttempts)
 	}
-	if k1 != k2 {
-		t.Errorf("cache keys differ for content-equal structs:\n  k1=%s\n  k2=%s", k1, k2)
+}
+
+func TestRepository_InRetryTransaction(t *testing.T) {
+	type Item struct {
+		ID   int64 `db:"pk,type:bigserial"`
+		Name string `db:"type:text"`
 	}
 
-	e3 := "bar"
-	k3, err := repo.existsCacheKey(reflect.ValueOf(Widget{ID: 2, Name: &e3}))
-	if err != nil {
-		t.Fatal(err)
+	db := &DB{searchPath: "public"}
+
+	repoNoRetry := NewRepository[Item](db)
+	if repoNoRetry.retryEnabled {
+		t.Error("expected retryEnabled=false when retry not configured")
 	}
-	if k1 == k3 {
-		t.Error("cache keys should differ for structs with different values")
+
+	repoWithRetry := NewRepository[Item](db, WithRetry(RetryOptions{}))
+	if !repoWithRetry.retryEnabled {
+		t.Error("expected retryEnabled=true when retry configured")
+	}
+}
+
+func TestRepository_TableFromRegistry(t *testing.T) {
+	type CustomTable struct {
+		ID int64 `db:"pk,type:bigserial"`
+	}
+
+	db := &DB{searchPath: "public"}
+	repo := NewRepository[CustomTable](db)
+
+	if repo.table == nil {
+		t.Fatal("expected table to be set")
+	}
+	if repo.table.Name != "custom_tables" {
+		t.Errorf("expected table name 'custom_tables', got %q", repo.table.Name)
 	}
 }

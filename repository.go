@@ -2,11 +2,9 @@ package mirage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"math/rand"
 	"reflect"
-	"time"
+	"strings"
 
 	schemapkg "github.com/justblue/mirage/internal/schema"
 )
@@ -26,9 +24,6 @@ import (
 type Repository[T any] struct {
 	db           *DB
 	table        *schemapkg.Table
-	cache        Cache
-	cacheTTLMin  time.Duration
-	cacheTTLMax  time.Duration
 	retry        RetryOptions
 	retryEnabled bool
 }
@@ -37,30 +32,8 @@ type Repository[T any] struct {
 type RepositoryOption func(*repositoryConfig)
 
 type repositoryConfig struct {
-	cache        Cache
-	cacheTTLMin  time.Duration
-	cacheTTLMax  time.Duration
 	retry        RetryOptions
 	retryEnabled bool
-}
-
-// WithCache enables result caching for the repository with a fixed TTL.
-func WithCache(cache Cache, ttl time.Duration) RepositoryOption {
-	return func(cfg *repositoryConfig) {
-		cfg.cache = cache
-		cfg.cacheTTLMin = ttl
-		cfg.cacheTTLMax = 0
-	}
-}
-
-// WithCacheJitter enables result caching with a random TTL range to avoid
-// cache stampede. TTL will be random in [ttlMin, ttlMax].
-func WithCacheJitter(cache Cache, ttlMin, ttlMax time.Duration) RepositoryOption {
-	return func(cfg *repositoryConfig) {
-		cfg.cache = cache
-		cfg.cacheTTLMin = ttlMin
-		cfg.cacheTTLMax = ttlMax
-	}
 }
 
 // WithRetry enables automatic retry of serialization failures and deadlocks
@@ -97,36 +70,9 @@ func NewRepository[T any](db *DB, opts ...RepositoryOption) *Repository[T] {
 	return &Repository[T]{
 		db:           db,
 		table:        td,
-		cache:        cfg.cache,
-		cacheTTLMin:  cfg.cacheTTLMin,
-		cacheTTLMax:  cfg.cacheTTLMax,
 		retry:        cfg.retry,
 		retryEnabled: cfg.retryEnabled,
 	}
-}
-
-// inRetryTransaction returns true when retry is enabled and the call is NOT
-// already inside an existing transaction — i.e. the call should open its own
-// retriable transaction. Returns false when retry is disabled or when already
-// inside a transaction (nested call — skip retry to avoid double-wrapping).
-func (r *Repository[T]) inRetryTransaction() bool {
-	return r.retryEnabled && !r.db.IsTransaction()
-}
-
-// doWithRetry runs fn inside a retriable transaction when retry is enabled and
-// the call is not already inside an existing transaction. When inside a
-// transaction (e.g. from uow.Do), fn runs directly without retry to avoid
-// double-wrapping. The cache is invalidated on success.
-func (r *Repository[T]) doWithRetry(ctx context.Context, fn func(tx *DB) error) error {
-	if r.inRetryTransaction() {
-		err := r.db.InTransactionWithRetry(ctx, r.retry, fn)
-		if err == nil {
-			r.invalidateCache(ctx)
-		}
-		return err
-	}
-	// Already inside a transaction or retry disabled — run directly.
-	return fn(r.db)
 }
 
 // Insert inserts a single record. The primary key is scanned into value's
@@ -141,28 +87,28 @@ func (r *Repository[T]) Insert(ctx context.Context, value *T) error {
 		})
 	}
 	structValue := schemapkg.IndirectValue(value)
-	err := r.insertTableRecord(ctx, structValue, nil, "", false)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.insertTableRecord(ctx, structValue, nil, "", false)
 }
 
 // InsertReturning inserts a single record and scans all returned columns
 // back into value. This uses RETURNING * so all database-generated values
 // (defaults, computed columns, etc.) are populated.
+// When retry is enabled and not inside an existing transaction, the insert
+// runs in a retriable transaction.
 func (r *Repository[T]) InsertReturning(ctx context.Context, value *T) error {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		return r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			return txRepo.InsertReturning(ctx, value)
+		})
+	}
 	structValue := schemapkg.IndirectValue(value)
 	primaryKey, ok := r.table.FindPrimaryKey()
 	if !ok {
 		return fmt.Errorf("no primary key found for table %s", r.table.Name)
 	}
 	idPtr := structValue.FieldByIndex(primaryKey.FieldIndex).Addr().Interface()
-	err := r.insertTableRecord(ctx, structValue, idPtr, "", false)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.insertTableRecord(ctx, structValue, idPtr, "", false)
 }
 
 // Update persists all columns of a record, using the primary key to
@@ -176,22 +122,27 @@ func (r *Repository[T]) Update(ctx context.Context, value *T) (int64, error) {
 			n, err = txRepo.Update(ctx, value)
 			return err
 		})
-		if err == nil {
-			r.invalidateCache(ctx)
-		}
 		return n, err
 	}
 	columnsToUpdate := r.table.ListColumnNamesExcept()
-	n, err := r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return n, err
+	return r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
 }
 
 // UpdateReturning updates a record and scans all returned columns back
 // into value. Returns the number of rows affected.
+// When retry is enabled and not inside an existing transaction, the update
+// runs in a retriable transaction.
 func (r *Repository[T]) UpdateReturning(ctx context.Context, value *T) (int64, error) {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		var n int64
+		err := r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			var err error
+			n, err = txRepo.UpdateReturning(ctx, value)
+			return err
+		})
+		return n, err
+	}
 	primaryKey, ok := r.table.FindPrimaryKey()
 	if !ok {
 		return 0, fmt.Errorf("no primary key found in table definition: %s", r.table.Name)
@@ -205,32 +156,47 @@ func (r *Repository[T]) UpdateReturning(ctx context.Context, value *T) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	r.invalidateCache(ctx)
 	return tag.RowsAffected(), nil
 }
 
 // UpdateOnlyColumns updates only the specified columns. Pass nil to update
 // all non-generated columns. Returns the number of rows affected.
+// When retry is enabled and not inside an existing transaction, the update
+// runs in a retriable transaction.
 func (r *Repository[T]) UpdateOnlyColumns(ctx context.Context, columns []string, value *T) (int64, error) {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		var n int64
+		err := r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			var err error
+			n, err = txRepo.UpdateOnlyColumns(ctx, columns, value)
+			return err
+		})
+		return n, err
+	}
 	if columns == nil {
 		columns = r.table.ListColumnNamesExcept()
 	}
-	n, err := r.updateTableRecords(ctx, columns, false, []any{value})
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return n, err
+	return r.updateTableRecords(ctx, columns, false, []any{value})
 }
 
 // UpdateExceptColumns updates all columns except the specified ones.
 // Returns the number of rows affected.
+// When retry is enabled and not inside an existing transaction, the update
+// runs in a retriable transaction.
 func (r *Repository[T]) UpdateExceptColumns(ctx context.Context, columns []string, value *T) (int64, error) {
-	columnsToUpdate := r.table.ListColumnNamesExcept(columns...)
-	n, err := r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
-	if err == nil {
-		r.invalidateCache(ctx)
+	if r.retryEnabled && !r.db.IsTransaction() {
+		var n int64
+		err := r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			var err error
+			n, err = txRepo.UpdateExceptColumns(ctx, columns, value)
+			return err
+		})
+		return n, err
 	}
-	return n, err
+	columnsToUpdate := r.table.ListColumnNamesExcept(columns...)
+	return r.updateTableRecords(ctx, columnsToUpdate, false, []any{value})
 }
 
 // Upsert inserts a record with ON CONFLICT semantics. forceOnConflictExpr
@@ -245,11 +211,7 @@ func (r *Repository[T]) Upsert(ctx context.Context, value *T, forceOnConflictExp
 		})
 	}
 	structValue := schemapkg.IndirectValue(value)
-	err := r.insertTableRecord(ctx, structValue, nil, forceOnConflictExpr, true)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.insertTableRecord(ctx, structValue, nil, forceOnConflictExpr, true)
 }
 
 // UpsertReturning inserts a record with ON CONFLICT semantics and scans
@@ -261,11 +223,7 @@ func (r *Repository[T]) UpsertReturning(ctx context.Context, value *T, forceOnCo
 		return fmt.Errorf("no primary key found for table %s", r.table.Name)
 	}
 	idPtr := structValue.FieldByIndex(primaryKey.FieldIndex).Addr().Interface()
-	err := r.insertTableRecord(ctx, structValue, idPtr, forceOnConflictExpr, true)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.insertTableRecord(ctx, structValue, idPtr, forceOnConflictExpr, true)
 }
 
 // Delete removes one or more records by primary key. Returns the number
@@ -278,40 +236,17 @@ func (r *Repository[T]) Delete(ctx context.Context, values ...*T) (int64, error)
 	for i, v := range values {
 		anyValues[i] = v
 	}
-	n, err := r.deleteTableRecords(ctx, anyValues)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return n, err
+	return r.deleteTableRecords(ctx, anyValues)
 }
 
 // SelectByID fetches a single record by its primary key. Returns a
-// pointer to T or ErrNoRows if not found. When a cache is configured,
-// results are cached transparently.
+// pointer to T or ErrNoRows if not found.
 func (r *Repository[T]) SelectByID(ctx context.Context, id any) (*T, error) {
-	if r.cache != nil {
-		key := fmt.Sprintf("%s:pk:%v", r.table.Name, id)
-		var cached T
-		found, err := r.cache.Get(ctx, key, &cached)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return &cached, nil
-		}
-	}
-
 	var result T
 	err := r.selectTableRecordByID(ctx, r.table, &result, id, LockOption{})
 	if err != nil {
 		return nil, err
 	}
-
-	if r.cache != nil {
-		key := fmt.Sprintf("%s:pk:%v", r.table.Name, id)
-		_ = r.cache.Set(ctx, key, result, r.jitteredTTL())
-	}
-
 	return &result, nil
 }
 
@@ -319,10 +254,6 @@ func (r *Repository[T]) SelectByID(ctx context.Context, id any) (*T, error) {
 // be called inside a transaction (via db.InTransaction or uow.Do) — outside
 // one, the lock is released the instant the statement completes and the
 // call returns an error rather than silently doing nothing.
-//
-// This method never reads from or writes to the cache: a locked read is
-// inherently about seeing the current, authoritative state inside a
-// transaction for the purpose of modifying it.
 func (r *Repository[T]) SelectByIDForUpdate(ctx context.Context, id any, opt LockOption) (*T, error) {
 	if !r.db.IsTransaction() {
 		return nil, fmt.Errorf("mirage: SelectByIDForUpdate requires an active transaction (call inside db.InTransaction or uow.Do); outside a transaction the lock is released before the caller's next statement runs")
@@ -339,26 +270,21 @@ func (r *Repository[T]) SelectByIDForUpdate(ctx context.Context, id any, opt Loc
 // QueryForUpdate executes a SQL query with row-level locking and scans all
 // resulting rows into a slice of *T. The lock option is appended to the
 // query. Must be called inside a transaction.
-//
-// This method never reads from or writes to the cache.
 func (r *Repository[T]) QueryForUpdate(ctx context.Context, opt LockOption, sql string, args ...any) ([]*T, error) {
 	if !r.db.IsTransaction() {
 		return nil, fmt.Errorf("mirage: QueryForUpdate requires an active transaction (call inside db.InTransaction or uow.Do); outside a transaction the lock is released before the caller's next statement runs")
 	}
 
-	// Append the lock clause to the user's SQL. The lock clause goes
-	// after WHERE ... ORDER BY ... LIMIT ... but before the final semicolon.
 	lockClause := opt.sql()
 	if lockClause == "" {
 		return r.Query(ctx, sql, args...)
 	}
 
-	// Strip trailing semicolon/whitespace, append lock clause, re-add semicolon.
 	cleaned := sql
 	for len(cleaned) > 0 && (cleaned[len(cleaned)-1] == ';' || cleaned[len(cleaned)-1] == ' ' || cleaned[len(cleaned)-1] == '\n' || cleaned[len(cleaned)-1] == '\t') {
 		cleaned = cleaned[:len(cleaned)-1]
 	}
-	lockSQL := cleaned + lockClause + ";"
+	lockSQL := cleaned + "\n" + strings.TrimSpace(lockClause) + ";"
 
 	var results []*T
 	rows, err := r.db.Query(ctx, lockSQL, args...)
@@ -383,59 +309,10 @@ func (r *Repository[T]) QueryForUpdate(ctx context.Context, opt LockOption, sql 
 }
 
 // Exists reports whether a record matching the non-zero fields of value
-// exists in the database. When a cache is configured, results are cached
-// transparently.
+// exists in the database.
 func (r *Repository[T]) Exists(ctx context.Context, value *T) (bool, error) {
-	if r.cache != nil {
-		structValue := schemapkg.IndirectValue(value)
-		key, keyErr := r.existsCacheKey(structValue)
-		if keyErr != nil {
-			// Can't build a safe cache key for this value (e.g. a field
-			// isn't JSON-encodable) -- skip the cache rather than fall
-			// back to fmt's %v, which prints raw pointer addresses for
-			// pointer-typed fields (the standard idiom here for nullable
-			// columns). Two calls with equal *values* behind different
-			// pointers would then get different cache keys every time,
-			// so the cache would silently never hit for any table with a
-			// nullable column -- worse than not caching at all, because
-			// it looks like caching is working.
-			exists, err := r.tableRecordExists(ctx, r.table, structValue)
-			return exists, err
-		}
-
-		var cached bool
-		found, err := r.cache.Get(ctx, key, &cached)
-		if err != nil {
-			return false, err
-		}
-		if found {
-			return cached, nil
-		}
-
-		exists, err := r.tableRecordExists(ctx, r.table, structValue)
-		if err != nil {
-			return false, err
-		}
-		_ = r.cache.Set(ctx, key, exists, r.jitteredTTL())
-		return exists, nil
-	}
-
 	structValue := schemapkg.IndirectValue(value)
 	return r.tableRecordExists(ctx, r.table, structValue)
-}
-
-// existsCacheKey builds a cache key from the value's content, not its
-// memory layout. json.Marshal dereferences pointer fields (the common
-// idiom for nullable columns) into their actual values, so two structs
-// that are equal in content always get the same key -- unlike fmt's %v,
-// which prints a pointer field's address and produces a different key on
-// every call even when the pointed-to value is identical.
-func (r *Repository[T]) existsCacheKey(structValue reflect.Value) (string, error) {
-	b, err := json.Marshal(structValue.Interface())
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s:exists:%s", r.table.Name, b), nil
 }
 
 // Duplicate copies an existing record, inserting a new row with all the
@@ -456,7 +333,6 @@ func (r *Repository[T]) Duplicate(ctx context.Context, value *T) (*T, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.invalidateCache(ctx)
 	return r.SelectByID(ctx, newID)
 }
 
@@ -466,13 +342,6 @@ func (r *Repository[T]) InsertMany(ctx context.Context, values []*T) error {
 		return nil
 	}
 	txFn := func(db *DB) error {
-		// Bind to the transactional db handle, not r (which is bound to
-		// r.db, the connection this Repository was constructed with). Using
-		// r.Insert here would silently run each row as its own autocommit
-		// statement on the pool instead of inside this transaction: every
-		// row before a failing one would stay committed, and this method's
-		// "single transaction" guarantee would be a no-op. No cache on
-		// txRepo -- invalidation happens once, after commit, below.
 		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, v := range values {
 			if err := txRepo.Insert(ctx, v); err != nil {
@@ -481,16 +350,10 @@ func (r *Repository[T]) InsertMany(ctx context.Context, values []*T) error {
 		}
 		return nil
 	}
-	var err error
 	if r.retryEnabled && !r.db.IsTransaction() {
-		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
-	} else {
-		err = r.db.InTransaction(ctx, txFn)
+		return r.db.InTransactionWithRetry(ctx, r.retry, txFn)
 	}
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.db.InTransaction(ctx, txFn)
 }
 
 // InsertManyReturning inserts multiple records with RETURNING * in a
@@ -508,16 +371,10 @@ func (r *Repository[T]) InsertManyReturning(ctx context.Context, values []*T) er
 		}
 		return nil
 	}
-	var err error
 	if r.retryEnabled && !r.db.IsTransaction() {
-		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
-	} else {
-		err = r.db.InTransaction(ctx, txFn)
+		return r.db.InTransactionWithRetry(ctx, r.retry, txFn)
 	}
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.db.InTransaction(ctx, txFn)
 }
 
 // UpdateMany persists all columns of multiple records in a single
@@ -530,11 +387,7 @@ func (r *Repository[T]) UpdateMany(ctx context.Context, values []*T) (int64, err
 	for i, v := range values {
 		anyValues[i] = v
 	}
-	n, err := r.updateTableRecords(ctx, nil, false, anyValues)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return n, err
+	return r.updateTableRecords(ctx, nil, false, anyValues)
 }
 
 // UpsertMany inserts or updates multiple records in a single transaction.
@@ -551,16 +404,10 @@ func (r *Repository[T]) UpsertMany(ctx context.Context, values []*T, forceOnConf
 		}
 		return nil
 	}
-	var err error
 	if r.retryEnabled && !r.db.IsTransaction() {
-		err = r.db.InTransactionWithRetry(ctx, r.retry, txFn)
-	} else {
-		err = r.db.InTransaction(ctx, txFn)
+		return r.db.InTransactionWithRetry(ctx, r.retry, txFn)
 	}
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return err
+	return r.db.InTransaction(ctx, txFn)
 }
 
 // DeleteMany removes multiple records by primary key in a single
@@ -573,11 +420,7 @@ func (r *Repository[T]) DeleteMany(ctx context.Context, values []*T) (int64, err
 	for i, v := range values {
 		anyValues[i] = v
 	}
-	n, err := r.deleteTableRecords(ctx, anyValues)
-	if err == nil {
-		r.invalidateCache(ctx)
-	}
-	return n, err
+	return r.deleteTableRecords(ctx, anyValues)
 }
 
 // Query executes a SQL query and scans all resulting rows into a slice
@@ -629,68 +472,6 @@ func (r *Repository[T]) QuerySingle(ctx context.Context, sql string, args ...any
 	return result, nil
 }
 
-// QueryWithCache is like Query but caches the result using the repository's
-// configured cache. key is the cache key, ttl overrides the default TTL.
-// If no cache is configured, this behaves identically to Query.
-func (r *Repository[T]) QueryWithCache(ctx context.Context, key string, ttl time.Duration, sql string, args ...any) ([]*T, error) {
-	if r.cache != nil {
-		var cached []*T
-		found, err := r.cache.Get(ctx, key, &cached)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return cached, nil
-		}
-	}
-
-	results, err := r.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-
-	if r.cache != nil && results != nil {
-		_ = r.cache.Set(ctx, key, results, ttl)
-	}
-
-	return results, nil
-}
-
-// QuerySingleWithCache is like QuerySingle but caches the result.
-// If no cache is configured, this behaves identically to QuerySingle.
-func (r *Repository[T]) QuerySingleWithCache(ctx context.Context, key string, ttl time.Duration, sql string, args ...any) (*T, error) {
-	if r.cache != nil {
-		var cached T
-		found, err := r.cache.Get(ctx, key, &cached)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return &cached, nil
-		}
-	}
-
-	result, err := r.QuerySingle(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-
-	if r.cache != nil {
-		_ = r.cache.Set(ctx, key, result, ttl)
-	}
-
-	return result, nil
-}
-
-// InvalidateCache removes all cached values whose keys start with prefix.
-// No-op if no cache is configured.
-func (r *Repository[T]) InvalidateCache(ctx context.Context, prefix string) error {
-	if r.cache == nil {
-		return nil
-	}
-	return r.cache.Invalidate(ctx, prefix)
-}
-
 // scanRow maps row columns to struct fields using the table definition.
 func scanRow(td *schemapkg.Table, rows Rows, dest any) error {
 	destVal := reflect.ValueOf(dest).Elem()
@@ -719,21 +500,7 @@ func scanRow(td *schemapkg.Table, rows Rows, dest any) error {
 	return rows.Scan(dests...)
 }
 
-// --- Internal helpers (moved from DB methods) ---
-
-func (r *Repository[T]) jitteredTTL() time.Duration {
-	if r.cacheTTLMax <= r.cacheTTLMin {
-		return r.cacheTTLMin
-	}
-	delta := r.cacheTTLMax - r.cacheTTLMin
-	return r.cacheTTLMin + time.Duration(rand.Int63n(int64(delta)))
-}
-
-func (r *Repository[T]) invalidateCache(ctx context.Context) {
-	if r.cache != nil {
-		_ = r.cache.Invalidate(ctx, r.table.Name+":")
-	}
-}
+// --- Internal helpers ---
 
 func (r *Repository[T]) insertTableRecord(ctx context.Context, structValue reflect.Value, idPtr any, forceOnConflictExpr string, upsert bool, returningColumns ...string) error {
 	query, args, err := schemapkg.BuildInsertQuery(r.table, structValue, idPtr, forceOnConflictExpr, upsert, returningColumns...)
@@ -776,8 +543,6 @@ func (r *Repository[T]) updateTableRecords(ctx context.Context, columnsToUpdate 
 	}
 	var totalRowsAffected int64
 	txFn := func(db *DB) error {
-		// txRepo, not r: r.updateTableRecord always executes against r.db,
-		// which would bypass this transaction entirely (see InsertMany).
 		txRepo := &Repository[T]{db: db, table: r.table}
 		for _, value := range values {
 			rowsAffected, err := txRepo.updateTableRecord(ctx, value, columnsToUpdate, reportNotFound, primaryKey)

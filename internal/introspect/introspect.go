@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -71,12 +70,21 @@ func FromLiveDatabase(ctx context.Context, pool *pgxpool.Pool, searchPath string
 // introspectTables reads all base tables and their columns from
 // information_schema.columns.
 func introspectTables(ctx context.Context, pool *pgxpool.Pool, searchPath string, pkg *schema.Package) error {
+	// pg_get_serial_sequence returns the owned sequence name for a column
+	// that was declared serial/bigserial/smallserial, and NULL for every
+	// other column (including a plain integer column that happens to have
+	// an unrelated nextval() default) -- it uses the same auto-dependency
+	// check pg_dump itself relies on to answer "was this serial", which a
+	// udt_name/data_type lookup alone can never answer: Postgres resolves
+	// "serial" to "integer + sequence + default" at DDL time and never
+	// stores "serial" anywhere in the catalog afterward.
 	query := `SELECT
 		c.table_name, c.column_name, c.ordinal_position,
 		c.data_type, c.udt_name, c.character_maximum_length,
 		c.numeric_precision, c.numeric_scale,
 		c.is_nullable, c.column_default,
 		CASE WHEN c.is_identity = 'YES' THEN true ELSE false END AS is_identity,
+		(pg_get_serial_sequence(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name), c.column_name) IS NOT NULL) AS is_serial,
 		tobj.table_type
 	FROM information_schema.columns c
 	JOIN information_schema.tables tobj
@@ -106,6 +114,7 @@ func introspectTables(ctx context.Context, pool *pgxpool.Pool, searchPath string
 			isNullable             string
 			colDefault             *string
 			isIdentity             bool
+			isSerial               bool
 			tableType              string
 		)
 		if err := rows.Scan(
@@ -113,7 +122,7 @@ func introspectTables(ctx context.Context, pool *pgxpool.Pool, searchPath string
 			&dataType, &udtName, &charMaxLen,
 			&numericPrec, &numericSc,
 			&isNullable, &colDefault,
-			&isIdentity, &tableType,
+			&isIdentity, &isSerial, &tableType,
 		); err != nil {
 			return fmt.Errorf("scanning column %s.%s: %w", tableName, colName, err)
 		}
@@ -139,22 +148,46 @@ func introspectTables(ctx context.Context, pool *pgxpool.Pool, searchPath string
 			cml = *charMaxLen
 		}
 
+		colType := mapCatalogDataType(udtName, dataType)
+		colSQLType := mapCatalogType(udtName, dataType, cml)
+		if isSerial {
+			// udt_name/data_type alone can never distinguish a serial
+			// column from a plain integer column: Postgres resolves
+			// serial to "integer + owned sequence + nextval() default"
+			// at DDL time and stores no trace of "serial" afterward.
+			// is_serial (from pg_get_serial_sequence) is the correct
+			// signal; override the size-based mapping it already
+			// produced (smallint/integer/bigint) to its serial-family
+			// counterpart so this matches what the scanner produces
+			// for a Go field tagged type:"serial"/"bigserial".
+			switch colType {
+			case schema.SmallInt:
+				colType, colSQLType = schema.SmallSerial, "smallserial"
+			case schema.Integer:
+				colType, colSQLType = schema.Serial, "serial"
+			case schema.BigInt:
+				colType, colSQLType = schema.BigSerial, "bigserial"
+			}
+		}
+
 		col := &schema.Column{
 			TableName:       tableName,
 			Name:            colName,
 			OrdinalPosition: ordinalPos,
-			Type:            mapCatalogDataType(udtName, dataType),
-			SQLType:         mapCatalogType(udtName, dataType, cml),
+			Type:            colType,
+			SQLType:         colSQLType,
 			Nullable:        isNullable == "YES",
-			Identity:        isIdentity,
+			// is_identity from information_schema is the correct,
+			// direct signal for a true `GENERATED ... AS IDENTITY`
+			// column -- a distinct Postgres feature from serial. Do
+			// not also set this from a nextval() default: every
+			// serial column has one, and conflating the two mislabels
+			// every serial-family PK as an identity column too.
+			Identity: isIdentity,
 		}
 
 		if colDefault != nil {
 			col.Default = *colDefault
-			// Detect identity columns by their default expression
-			if strings.Contains(*colDefault, "nextval(") {
-				col.Identity = true
-			}
 		}
 
 		tb.columns = append(tb.columns, col)
@@ -555,7 +588,7 @@ func introspectTriggers(ctx context.Context, pool *pgxpool.Pool, searchPath stri
 			WHEN t.tgtype & 4 = 4 THEN 'AFTER'
 			WHEN t.tgtype & 8 = 8 THEN 'INSTEAD OF'
 		END AS timing,
-		ARRAY_REMOVE(ARRAY_REMOVE(ARRAY[
+		ARRAY_REMOVE(ARRAY[
 			CASE WHEN t.tgtype & 4 = 4 THEN 'INSERT' END,
 			CASE WHEN t.tgtype & 8 = 8 THEN 'DELETE' END,
 			CASE WHEN t.tgtype & 16 = 16 THEN 'UPDATE' END,
