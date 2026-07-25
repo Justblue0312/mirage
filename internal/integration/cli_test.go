@@ -13,9 +13,14 @@ import (
 
 const cliTestTableModel = `package models
 
-type Widget struct {
-	_ struct{} ` + "`db:\"name=widgets\"`" + `
+import "github.com/justblue/mirage"
 
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Widget",
+	Name:       "widgets",
+})
+
+type Widget struct {
 	ID   int64  ` + "`db:\"pk,identity,type=bigint\"`" + `
 	Name string ` + "`db:\"name=name,type=text,notnull\"`" + `
 }

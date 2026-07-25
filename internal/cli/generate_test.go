@@ -204,8 +204,14 @@ func TestCmdGenerate_InvalidModelFailsValidation(t *testing.T) {
 // persisted --db snapshot rather than relying on a fresh scan.
 const idempotentModelV1 = `package models
 
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Product",
+	Name:       "products",
+})
+
 type Product struct {
-	_ struct{} ` + "`db:\"name=products\"`" + `
 	ID   int64  ` + "`db:\"pk,identity,type=bigserial\"`" + `
 	Name string ` + "`db:\"name=name,type=varchar(255),notnull\"`" + `
 }
@@ -213,8 +219,14 @@ type Product struct {
 
 const idempotentModelV2 = `package models
 
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Product",
+	Name:       "products",
+})
+
 type Product struct {
-	_ struct{} ` + "`db:\"name=products\"`" + `
 	ID   int64  ` + "`db:\"pk,identity,type=bigserial\"`" + `
 	Name string ` + "`db:\"name=name,type=varchar(255),notnull\"`" + `
 	Sku  string ` + "`db:\"name=sku,type=varchar(100),notnull\"`" + `

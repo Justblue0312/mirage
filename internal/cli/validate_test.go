@@ -16,9 +16,15 @@ func writeModelFile(t *testing.T, dir, filename, content string) {
 
 const validUserModel = `package models
 
-type User struct {
-	_ struct{} ` + "`db:\"name=users,comment=Users table\"`" + `
+import "github.com/justblue/mirage"
 
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "User",
+	Name:       "users",
+	Comment:    "Users table",
+})
+
+type User struct {
 	ID    int64  ` + "`db:\"pk,identity,type=bigserial\"`" + `
 	Email string ` + "`db:\"name=email,type=varchar(255),notnull,unique\"`" + `
 }
@@ -35,9 +41,14 @@ type User struct {
 // does not currently cover this specific, generate-time-only check.
 const warnOnlyModel = `package models
 
-type Order struct {
-	_ struct{} ` + "`db:\"name=orders\"`" + `
+import "github.com/justblue/mirage"
 
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Order",
+	Name:       "orders",
+})
+
+type Order struct {
 	ID       int64 ` + "`db:\"pk,identity,type=bigserial\"`" + `
 	TenantID int64 ` + "`db:\"name=tenant_id,type=bigint,notnull\"`" + `
 }
@@ -48,13 +59,22 @@ type Order struct {
 // prints the failure.
 const duplicateTableModel = `package models
 
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Account",
+	Name:       "accounts",
+})
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "LegacyAccount",
+	Name:       "accounts",
+})
+
 type Account struct {
-	_ struct{} ` + "`db:\"name=accounts\"`" + `
 	ID int64 ` + "`db:\"pk,identity,type=bigserial\"`" + `
 }
 
 type LegacyAccount struct {
-	_ struct{} ` + "`db:\"name=accounts\"`" + `
 	ID int64 ` + "`db:\"pk,identity,type=bigserial\"`" + `
 }
 `

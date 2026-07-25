@@ -107,45 +107,17 @@ func TestGetStructTag(t *testing.T) {
 	}
 }
 
-func TestExtractTableTag(t *testing.T) {
-	src := `package test
-type User struct {
-	_ struct{} ` + "`" + `db:"name=users,comment=User accounts,options=OIDS=false"` + "`" + `
-	ID int64 ` + "`" + `db:"pk,identity,type=bigserial"` + "`" + `
-}`
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, "test.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-
-	for _, decl := range node.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.TYPE {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			ts, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			st, ok := ts.Type.(*ast.StructType)
-			if !ok {
-				continue
-			}
-			got := extractTableTag(st)
-			want := "name=users,comment=User accounts,options=OIDS=false"
-			if got != want {
-				t.Errorf("extractTableTag() = %q, want %q", got, want)
-			}
-		}
-	}
-}
-
 func TestParseFile_SingleStruct(t *testing.T) {
 	src := `package test
+
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "User",
+	Name:       "users",
+	Comment:    "Users table",
+})
 type User struct {
-	_ struct{} ` + "`" + `db:"name=users,comment=Users table"` + "`" + `
 	ID    int64  ` + "`" + `db:"pk,identity,type=bigserial"` + "`" + `
 	Name  string ` + "`" + `db:"name=name,type=varchar(255),notnull"` + "`" + `
 	Email string ` + "`" + `db:"name=email,type=varchar(255),notnull,unique"` + "`" + `
@@ -169,7 +141,6 @@ type User struct {
 		t.Errorf("GoName = %q, want User", d.GoName)
 	}
 
-	// _ field is table marker, should not appear in Fields
 	if len(d.Fields) != 3 {
 		t.Fatalf("got %d fields, want 3 (ID, Name, Email); fields: %v", len(d.Fields), fieldNames(d.Fields))
 	}
@@ -207,13 +178,19 @@ type User struct {
 
 func TestParseFile_Enum(t *testing.T) {
 	src := `package test
+
+import "github.com/justblue/mirage"
+
 type Status string
 const (
 	StatusActive  Status = "active"
 	StatusDeleted Status = "deleted"
 )
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Post",
+	Name:       "posts",
+})
 type Post struct {
-	_      string ` + "`" + `db:"name=posts"` + "`" + `
 	ID     int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 	Status Status ` + "`" + `db:"name=status,type=status,notnull"` + "`" + `
 }`
@@ -268,12 +245,20 @@ type Post struct {
 
 func TestParseFile_Embedded(t *testing.T) {
 	src := `package test
-import "time"
+
+import (
+	"time"
+	"github.com/justblue/mirage"
+)
+
 type Timestamps struct {
 	CreatedAt time.Time ` + "`" + `db:"name=created_at,type=timestamptz,notnull"` + "`" + `
 }
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "User",
+	Name:       "users",
+})
 type User struct {
-	_ struct{} ` + "`" + `db:"name=users"` + "`" + `
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 	Timestamps
 }`
@@ -305,8 +290,14 @@ type User struct {
 
 func TestParseFile_PKArgs(t *testing.T) {
 	src := `package test
+
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Foo",
+	Name:       "foo",
+})
 type Foo struct {
-	_ struct{} ` + "`" + `db:"name=foo"` + "`" + `
 	A int64 ` + "`" + `db:"pk(col1,col2)"` + "`" + `
 }`
 	fset := token.NewFileSet()
@@ -331,8 +322,14 @@ type Foo struct {
 
 func TestParseFile_CheckConstraint(t *testing.T) {
 	src := `package test
+
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{
+	StructName: "Foo",
+	Name:       "foo",
+})
 type Foo struct {
-	_ struct{} ` + "`" + `db:"name=foo"` + "`" + `
 	Status string ` + "`" + `db:"name=status,type=varchar(20),check=status IN ('active','deleted')"` + "`" + `
 }`
 	fset := token.NewFileSet()
@@ -857,23 +854,26 @@ func TestScan_Deterministic(t *testing.T) {
 
 	src := `package fixture
 
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{StructName: "Alpha", Name: "alpha"})
+var _ = mirage.Register(mirage.TableConfig{StructName: "Beta", Name: "beta"})
+var _ = mirage.Register(mirage.TableConfig{StructName: "Gamma", Name: "gamma"})
+var _ = mirage.Register(mirage.TableConfig{StructName: "Delta", Name: "delta"})
+
 type Alpha struct {
-	_  struct{} ` + "`" + `db:"name=alpha"` + "`" + `
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 }
 
 type Beta struct {
-	_  struct{} ` + "`" + `db:"name=beta"` + "`" + `
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 }
 
 type Gamma struct {
-	_  struct{} ` + "`" + `db:"name=gamma"` + "`" + `
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 }
 
 type Delta struct {
-	_  struct{} ` + "`" + `db:"name=delta"` + "`" + `
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 }
 `
@@ -913,10 +913,13 @@ func TestScan_ColumnTypeChangeUsing(t *testing.T) {
 
 	src := `package fixture
 
+import "github.com/justblue/mirage"
+
+var _ = mirage.Register(mirage.TableConfig{StructName: "Widget", Name: "widgets"})
+
 type Widget struct {
-	_     struct{} ` + "`" + `db:"name=widgets"` + "`" + `
-	ID    int64    ` + "`" + `db:"pk,type=bigserial"` + "`" + `
-	Count string   ` + "`" + `db:"name=count,type=integer,using=CAST(count AS integer)"` + "`" + `
+	ID    int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
+	Count string ` + "`" + `db:"name=count,type=integer,using=CAST(count AS integer)"` + "`" + `
 }
 `
 	if err := os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(src), 0644); err != nil {

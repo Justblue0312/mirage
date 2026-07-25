@@ -25,6 +25,7 @@ const (
 	DeclProcedure
 	DeclGrant
 	DeclPolicy
+	DeclTableConfig
 )
 
 type RawDecl struct {
@@ -44,7 +45,8 @@ type RawDecl struct {
 	Procedure        *schema.Procedure
 	Grant            *schema.Grant
 	Policy           *schema.Policy
-	Extension        *schema.Extension
+	Extension   *schema.Extension
+	TableConfig *schema.TableConfig
 }
 
 type RawField struct {
@@ -57,6 +59,31 @@ type RawField struct {
 func ParseFile(fset *token.FileSet, node *ast.File, filePath string) ([]RawDecl, error) {
 	var decls []RawDecl
 
+	// Pass 1: Collect mirage.Register() calls (including DeclTableConfig)
+	for _, decl := range node.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Name.Name == "init" && d.Body != nil {
+				extractRegisterCalls(fset, d.Body.List, filePath, &decls)
+			}
+		case *ast.GenDecl:
+			if d.Tok == token.VAR {
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok || len(vs.Values) == 0 {
+						continue
+					}
+					if call, ok := vs.Values[0].(*ast.CallExpr); ok && isMirageRegisterCall(call) {
+						for _, arg := range call.Args {
+							extractRegisteredObject(fset, arg, filePath, &decls)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Pass 2: Process type declarations, using DeclTableConfig to identify tables
 	for _, decl := range node.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.TYPE {
@@ -88,24 +115,11 @@ func ParseFile(fset *token.FileSet, node *ast.File, filePath string) ([]RawDecl,
 				continue
 			}
 
-			tableTag := extractTableTag(st)
-			if tableTag != "" {
-				tableName, opts, args := ParseTableTag(tableTag)
+			// Check for matching DeclTableConfig
+			tcDecl := findTableConfigForStruct(decls, ts.Name.Name)
+			if tcDecl != nil {
 				fields, embeddedTypes := extractStructFields(fset, st, filePath)
-
-				tableAttrs := Attrs{}
-				if tableName != "" {
-					tableAttrs["name"] = AttrValue{Value: tableName}
-				}
-				for k, v := range opts {
-					if k != "name" {
-						tableAttrs[k] = AttrValue{Value: v}
-					}
-				}
-				for k, v := range args {
-					tableAttrs[k] = AttrValue{Args: v}
-				}
-
+				tableAttrs := buildAttrsFromTableConfig(tcDecl.TableConfig)
 				decls = append(decls, RawDecl{
 					FilePath:      filePath,
 					Line:          pos.Line,
@@ -133,45 +147,50 @@ func ParseFile(fset *token.FileSet, node *ast.File, filePath string) ([]RawDecl,
 		}
 	}
 
-	// Scan for mirage.Register() calls
-	for _, decl := range node.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			if d.Name.Name == "init" && d.Body != nil {
-				extractRegisterCalls(fset, d.Body.List, filePath, &decls)
-			}
-		case *ast.GenDecl:
-			if d.Tok == token.VAR {
-				for _, spec := range d.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok || len(vs.Values) == 0 {
-						continue
-					}
-					if call, ok := vs.Values[0].(*ast.CallExpr); ok && isMirageRegisterCall(call) {
-						for _, arg := range call.Args {
-							extractRegisteredObject(fset, arg, filePath, &decls)
-						}
-					}
-				}
-			}
+	// Filter out DeclTableConfig entries (consumed during struct matching)
+	var filtered []RawDecl
+	for _, d := range decls {
+		if d.Kind != DeclTableConfig {
+			filtered = append(filtered, d)
 		}
 	}
 
-	return decls, nil
+	return filtered, nil
 }
 
-func extractTableTag(st *ast.StructType) string {
-	if st.Fields == nil {
-		return ""
-	}
-	for _, f := range st.Fields.List {
-		if len(f.Names) == 1 && f.Names[0].Name == "_" {
-			if tag := getStructTag(f, "db"); tag != "" {
-				return tag
-			}
+func findTableConfigForStruct(configs []RawDecl, goName string) *RawDecl {
+	for i := range configs {
+		if configs[i].Kind == DeclTableConfig && configs[i].TableConfig != nil && configs[i].TableConfig.StructName == goName {
+			return &configs[i]
 		}
 	}
-	return ""
+	return nil
+}
+
+func buildAttrsFromTableConfig(tc *schema.TableConfig) Attrs {
+	attrs := Attrs{}
+	if tc.Name != "" {
+		attrs["name"] = AttrValue{Value: tc.Name}
+	}
+	if tc.SearchPath != "" {
+		attrs["schema"] = AttrValue{Value: tc.SearchPath}
+	}
+	if tc.Comment != "" {
+		attrs["comment"] = AttrValue{Value: tc.Comment}
+	}
+	if tc.Options != "" {
+		attrs["options"] = AttrValue{Value: tc.Options}
+	}
+	if tc.Type != "" {
+		attrs["type"] = AttrValue{Value: tc.Type}
+	}
+	if tc.Ignore {
+		attrs["ignore"] = AttrValue{Flag: true}
+	}
+	if len(tc.Partition) >= 2 {
+		attrs["partitioned"] = AttrValue{Args: tc.Partition}
+	}
+	return attrs
 }
 
 func getStructTag(field *ast.Field, tag string) string {
@@ -675,6 +694,12 @@ func extractRegisteredObject(fset *token.FileSet, arg ast.Expr, filePath string,
 			FilePath: filePath, Line: line, Kind: DeclPolicy,
 			GoName: p.Name, Policy: p,
 		})
+	case typeName == "TableConfig" || strings.HasSuffix(typeName, "TableConfig"):
+		tc := parseTableConfigLiteral(cl)
+		*decls = append(*decls, RawDecl{
+			FilePath: filePath, Line: line, Kind: DeclTableConfig,
+			GoName: tc.StructName, TableConfig: tc,
+		})
 	}
 }
 
@@ -883,6 +908,39 @@ func parsePolicyLiteral(cl *ast.CompositeLit) *schema.Policy {
 		}
 	}
 	return p
+}
+
+func parseTableConfigLiteral(cl *ast.CompositeLit) *schema.TableConfig {
+	tc := &schema.TableConfig{}
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch key.Name {
+		case "StructName":
+			tc.StructName = extractStringLit(kv.Value)
+		case "Name":
+			tc.Name = extractStringLit(kv.Value)
+		case "SearchPath":
+			tc.SearchPath = extractStringLit(kv.Value)
+		case "Comment":
+			tc.Comment = extractStringLit(kv.Value)
+		case "Options":
+			tc.Options = extractStringLit(kv.Value)
+		case "Type":
+			tc.Type = extractStringLit(kv.Value)
+		case "Partition":
+			tc.Partition = parseStringSlice(kv.Value)
+		case "Ignore":
+			tc.Ignore = extractBoolLit(kv.Value)
+		}
+	}
+	return tc
 }
 
 func parseFunctionArgumentList(expr ast.Expr) []schema.FunctionArgument {
