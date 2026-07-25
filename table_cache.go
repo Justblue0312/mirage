@@ -36,10 +36,16 @@ func cachedTable(typ reflect.Type) (*schemapkg.Table, error) {
 }
 
 func resolveTableName(typ reflect.Type) string {
+	// 1. Check registry for a matching TableConfig
+	if tc := registry.TableConfigByGoName(typ.Name()); tc != nil && tc.Name != "" {
+		return tc.Name
+	}
+	// 2. Legacy fallback: TableName() interface
 	if named, ok := reflect.New(typ).Interface().(TableNamer); ok {
 		if name := named.TableName(); name != "" {
 			return name
 		}
 	}
+	// 3. Default: snake_case plural of Go type name
 	return schemapkg.ToTableName(typ.Name())
 }
