@@ -75,3 +75,63 @@ func TestResolveTableName_EmptyRegistryName(t *testing.T) {
 		t.Errorf("expected %q, got %q", "gizmos", name)
 	}
 }
+
+func TestResolveTableName_CustomRegistry(t *testing.T) {
+	ResetRegistry()
+	defer ResetRegistry()
+
+	type demoItem struct{}
+
+	customReg := NewRegistry()
+	customReg.Register(TableConfig{StructName: "demoItem", Name: "custom_items"})
+
+	typ := reflect.TypeOf(demoItem{})
+	if name := resolveTableName(typ, nil); name != "demo_items" {
+		t.Errorf("global registry: expected %q, got %q", "demo_items", name)
+	}
+	if name := resolveTableName(typ, customReg); name != "custom_items" {
+		t.Errorf("custom registry: expected %q, got %q", "custom_items", name)
+	}
+}
+
+func TestCachedTable_IsolatesBetweenRegistries(t *testing.T) {
+	ResetRegistry()
+	defer ResetRegistry()
+
+	type demoCacheItem struct{}
+
+	customReg := NewRegistry()
+	customReg.Register(TableConfig{StructName: "demoCacheItem", Name: "isolated_items"})
+
+	typ := reflect.TypeOf(demoCacheItem{})
+	tbl1, err := cachedTable(typ, nil)
+	if err != nil {
+		t.Fatalf("cachedTable (global): %v", err)
+	}
+	tbl2, err := cachedTable(typ, customReg)
+	if err != nil {
+		t.Fatalf("cachedTable (custom): %v", err)
+	}
+	if tbl1.SQLName() == tbl2.SQLName() {
+		t.Errorf("expected different table names for global vs custom registry, both got %q", tbl1.SQLName())
+	}
+}
+
+func TestNewRepository_WithRegistry(t *testing.T) {
+	ResetRegistry()
+	defer ResetRegistry()
+
+	type demoRepoItem struct {
+		ID int64 `db:"pk,type:bigserial"`
+	}
+
+	customReg := NewRegistry()
+	customReg.Register(TableConfig{StructName: "demoRepoItem", Name: "repo_custom_items"})
+
+	db := &DB{}
+	repo := NewRepository[demoRepoItem](db, WithRegistry(customReg))
+
+	if repo.table.SQLName() != "repo_custom_items" {
+		t.Errorf("expected table name %q, got %q", "repo_custom_items", repo.table.SQLName())
+	}
+}
