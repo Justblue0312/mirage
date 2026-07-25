@@ -17,6 +17,7 @@ type ProcedureArgument = schemapkg.ProcedureArgument
 type Grant = schemapkg.Grant
 type Policy = schemapkg.Policy
 type Extension = schemapkg.Extension
+type TableConfig = schemapkg.TableConfig
 
 // Registry holds a set of database objects (functions, views, triggers, etc.)
 // registered programmatically. Each Registry instance is independent, which
@@ -33,6 +34,7 @@ type Registry struct {
 	procedures        []Procedure
 	grants            []Grant
 	policies          []Policy
+	tableConfigs      []TableConfig
 }
 
 // NewRegistry returns a fresh, empty Registry.
@@ -149,8 +151,19 @@ func (r *Registry) Register(items ...any) error {
 			if !exists {
 				r.extensions = append(r.extensions, v)
 			}
+		case TableConfig:
+			exists := false
+			for _, tc := range r.tableConfigs {
+				if tc.StructName == v.StructName {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				r.tableConfigs = append(r.tableConfigs, v)
+			}
 		default:
-			return fmt.Errorf("register: unsupported type %T; expected one of Function, View, MaterializedView, Trigger, Procedure, Grant, Policy, Extension", it)
+			return fmt.Errorf("register: unsupported type %T; expected one of Function, View, MaterializedView, Trigger, Procedure, Grant, Policy, Extension, TableConfig", it)
 		}
 	}
 
@@ -229,6 +242,28 @@ func (r *Registry) Extensions() []Extension {
 	return result
 }
 
+// TableConfigs returns a copy of all registered table configs.
+func (r *Registry) TableConfigs() []TableConfig {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]TableConfig, len(r.tableConfigs))
+	copy(result, r.tableConfigs)
+	return result
+}
+
+// TableConfigByGoName returns the TableConfig whose StructName matches goName,
+// or nil if no such config exists.
+func (r *Registry) TableConfigByGoName(goName string) *TableConfig {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.tableConfigs {
+		if r.tableConfigs[i].StructName == goName {
+			return &r.tableConfigs[i]
+		}
+	}
+	return nil
+}
+
 // Reset clears all registered objects.
 func (r *Registry) Reset() {
 	r.mu.Lock()
@@ -241,6 +276,7 @@ func (r *Registry) Reset() {
 	r.procedures = nil
 	r.grants = nil
 	r.policies = nil
+	r.tableConfigs = nil
 }
 
 // Register stores one or more database objects in the process-global registry.
@@ -276,6 +312,9 @@ func GetRegisteredPolicies() []Policy { return registry.Policies() }
 
 // GetRegisteredExtensions returns all extensions registered on the global registry.
 func GetRegisteredExtensions() []Extension { return registry.Extensions() }
+
+// GetRegisteredTableConfigs returns all table configs registered on the global registry.
+func GetRegisteredTableConfigs() []TableConfig { return registry.TableConfigs() }
 
 // ResetRegistry clears all objects on the global registry. Intended for use in
 // tests to guarantee isolation between cases that share the process-global

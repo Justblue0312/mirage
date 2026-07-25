@@ -242,3 +242,18 @@ func (e *Extension) HashBody() string {
 	h.Write([]byte(e.Version))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
+
+// TableConfig maps a Go struct type to its SQL table metadata.
+// Register one per table type via mirage.Register(mirage.Table{...})
+// in an init() function. The scanner detects these calls at scan time
+// and uses them to name tables during migration generation.
+type TableConfig struct {
+	StructName string   // Go type name (e.g. "User")
+	Name       string   // SQL table name (optional, defaults to snake_case plural of StructName)
+	SearchPath string   // schema (optional, defaults to "public")
+	Comment    string   // table comment
+	Options    string   // table options (e.g. "UNLOGGED")
+	Type       string   // table type (e.g. "base table")
+	Partition  []string // PARTITION BY (strategy, column) — e.g. ["RANGE", "created_at"]
+	Ignore     bool     // if true, skip this struct entirely
+}
