@@ -1,10 +1,12 @@
 package metrics
 
-import "time"
+import (
+	"time"
+
+	mirage "github.com/justblue/mirage"
+)
 
 type Event struct {
-	_ struct{} `db:"name=events,comment=User activity events for analytics,partitioned(RANGE,created_at),pk(id,created_at)"`
-
 	ID int64 `db:"identity,type=bigserial"`
 
 	UserID    *int64 `db:"name=user_id,type=bigint,null,ref=users.id ON DELETE SET NULL,comment=nil for anonymous events"`
@@ -24,4 +26,13 @@ type Event struct {
 	DurationMs *int `db:"name=duration_ms,type=int,null,comment=Event duration in milliseconds"`
 
 	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW()"`
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "Event",
+		Name:       "events",
+		Comment:    "User activity events for analytics",
+		Partition:  []string{"RANGE", "created_at"},
+	})
 }

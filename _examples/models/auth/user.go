@@ -1,10 +1,12 @@
 package auth
 
-import "time"
+import (
+	"time"
+
+	mirage "github.com/justblue/mirage"
+)
 
 type User struct {
-	_ struct{} `db:"name=users,comment=User accounts with authentication and profile data"`
-
 	ID int64 `db:"pk,identity,type=bigserial"`
 
 	Username string `db:"name=username,type=varchar(100),notnull,unique_index=idx_users_username_lower,comment=Unique login handle"`
@@ -25,4 +27,12 @@ type User struct {
 	LastLoginAt *time.Time `db:"name=last_login_at,type=timestamptz,null"`
 	CreatedAt   time.Time  `db:"name=created_at,type=timestamptz,notnull,default=NOW()"`
 	UpdatedAt   time.Time  `db:"name=updated_at,type=timestamptz,notnull,default=NOW()"`
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "User",
+		Name:       "users",
+		Comment:    "User accounts with authentication and profile data",
+	})
 }

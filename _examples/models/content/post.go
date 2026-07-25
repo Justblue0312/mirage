@@ -1,6 +1,10 @@
 package content
 
-import "time"
+import (
+	"time"
+
+	mirage "github.com/justblue/mirage"
+)
 
 type PostStatus string
 
@@ -11,8 +15,6 @@ const (
 )
 
 type Post struct {
-	_ struct{} `db:"name=posts,comment=Blog posts with content and metadata"`
-
 	ID          int64      `db:"pk,identity,type=bigserial"`
 	UserID      int64      `db:"name=user_id,type=bigint,notnull,ref=users.id ON DELETE CASCADE,comment=Post author"`
 	Title       string     `db:"name=title,type=varchar(500),notnull,comment=Post title"`
@@ -28,12 +30,9 @@ type Post struct {
 	IsLocked bool `db:"name=is_locked,type=bool,default=false,comment=Comments locked"`
 
 	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW()"`
-	UpdatedAt time.Time `db:"name=updated_at,type=timestamptz,notnull,default=NOW()"`
 }
 
 type Comment struct {
-	_ struct{} `db:"name=comments,comment=Threaded comments on posts"`
-
 	ID       int64  `db:"pk,identity,type=bigserial"`
 	PostID   int64  `db:"name=post_id,type=bigint,notnull,ref=posts.id ON DELETE CASCADE"`
 	UserID   int64  `db:"name=user_id,type=bigint,notnull,ref=users.id ON DELETE CASCADE"`
@@ -50,8 +49,6 @@ type Comment struct {
 }
 
 type Tag struct {
-	_ struct{} `db:"name=tags,comment=Content tags for categorization"`
-
 	ID   int64  `db:"pk,identity,type=bigserial"`
 	Name string `db:"name=name,type=varchar(100),notnull,unique,comment=Tag display name"`
 	Slug string `db:"name=slug,type=varchar(100),notnull,unique,comment=URL-safe tag identifier"`
@@ -64,12 +61,33 @@ type Tag struct {
 }
 
 type PostTag struct {
-	_ struct{} `db:"name=post_tags,comment=Many-to-many relationship between posts and tags"`
-
 	PostID int64 `db:"name=post_id,type=bigint,notnull,ref=posts.id ON DELETE CASCADE"`
 	TagID  int64 `db:"name=tag_id,type=bigint,notnull,ref=tags.id ON DELETE CASCADE"`
 
 	SortOrder int `db:"name=sort_order,type=int,default=0,comment=Display order within post"`
 
 	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW()"`
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "Post",
+		Name:       "posts",
+		Comment:    "Blog posts with content and metadata",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "Comment",
+		Name:       "comments",
+		Comment:    "Threaded comments on posts",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "Tag",
+		Name:       "tags",
+		Comment:    "Content tags for categorization",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "PostTag",
+		Name:       "post_tags",
+		Comment:    "Many-to-many relationship between posts and tags",
+	})
 }

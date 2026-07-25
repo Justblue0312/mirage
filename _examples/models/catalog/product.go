@@ -1,10 +1,12 @@
 package catalog
 
-import "time"
+import (
+	"time"
+
+	mirage "github.com/justblue/mirage"
+)
 
 type Category struct {
-	_ struct{} `db:"name=categories,comment=Product category tree with self-referencing hierarchy"`
-
 	ID          int64  `db:"pk,identity,type=bigserial"`
 	ParentID    *int64 `db:"name=parent_id,type=bigint,null,ref=categories.id ON DELETE SET NULL,comment=Parent category for tree structure"`
 	Name        string `db:"name=name,type=varchar(255),notnull,comment=Category display name"`
@@ -20,8 +22,6 @@ type Category struct {
 }
 
 type Product struct {
-	_ struct{} `db:"name=products,comment=Product catalog with pricing and inventory"`
-
 	ID int64 `db:"pk,identity,type=bigserial"`
 
 	CategoryID int64  `db:"name=category_id,type=bigint,notnull,ref=categories.id ON DELETE RESTRICT"`
@@ -53,8 +53,6 @@ type Product struct {
 }
 
 type ProductImage struct {
-	_ struct{} `db:"name=product_images,comment=Product image gallery with ordering"`
-
 	ID        int64  `db:"pk,identity,type=bigserial"`
 	ProductID int64  `db:"name=product_id,type=bigint,notnull,ref=products.id ON DELETE CASCADE"`
 	URL       string `db:"name=url,type=varchar(1024),notnull,comment=Image URL"`
@@ -66,8 +64,6 @@ type ProductImage struct {
 }
 
 type ProductVariant struct {
-	_ struct{} `db:"name=product_variants,comment=Product variants for size/color/etc"`
-
 	ID        int64  `db:"pk,identity,type=bigserial"`
 	ProductID int64  `db:"name=product_id,type=bigint,notnull,ref=products.id ON DELETE CASCADE"`
 	SKU       string `db:"name=sku,type=varchar(100),notnull,unique,comment=Variant-specific SKU"`
@@ -82,4 +78,27 @@ type ProductVariant struct {
 
 	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW()"`
 	UpdatedAt time.Time `db:"name=updated_at,type=timestamptz,notnull,default=NOW()"`
+}
+
+func init() {
+	mirage.Register(mirage.TableConfig{
+		StructName: "Category",
+		Name:       "categories",
+		Comment:    "Product category tree with self-referencing hierarchy",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "Product",
+		Name:       "products",
+		Comment:    "Product catalog with pricing and inventory",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "ProductImage",
+		Name:       "product_images",
+		Comment:    "Product image gallery with ordering",
+	})
+	mirage.Register(mirage.TableConfig{
+		StructName: "ProductVariant",
+		Name:       "product_variants",
+		Comment:    "Product variants for size/color/etc",
+	})
 }
