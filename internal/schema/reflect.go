@@ -33,42 +33,47 @@ func IndirectValue(v interface{}) reflect.Value {
 	return rv
 }
 
-func lookupFields(typ reflect.Type, parentIndex []int) []reflect.StructField {
-	var fields []reflect.StructField
+func lookupStructFields(typ reflect.Type, parentIndex []int) []reflect.StructField {
+	typ = IndirectType(typ)
+	if typ.Kind() != reflect.Struct {
+		return nil
+	}
+
+	var result []reflect.StructField
 	num := typ.NumField()
 	for i := 0; i < num; i++ {
 		field := typ.Field(i)
 		if !field.IsExported() {
 			continue
 		}
-		tag := field.Tag.Get(GetDefaultTag())
-		if tag == "" || tag == "-" {
-			continue
-		}
+
 		fieldIndex := make([]int, len(parentIndex)+1)
 		copy(fieldIndex, parentIndex)
 		fieldIndex[len(parentIndex)] = i
 		field.Index = fieldIndex
-		fields = append(fields, field)
-	}
-	return fields
-}
 
-func lookupStructFields(typ reflect.Type, parentIndex []int) []reflect.StructField {
-	typ = IndirectType(typ)
-	if typ.Kind() != reflect.Struct {
-		return nil
-	}
-	fields := lookupFields(typ, parentIndex)
-	var result []reflect.StructField
-	for _, f := range fields {
-		ft := IndirectType(f.Type)
-		if ft.Kind() == reflect.Struct && !implementsScanner(ft) && !isSpecialJSONStructure(f) {
-			subFields := lookupStructFields(ft, f.Index)
+		tag := field.Tag.Get(GetDefaultTag())
+		ft := IndirectType(field.Type)
+
+		if ft.Kind() == reflect.Struct && !implementsScanner(ft) {
+			if tag == "" || tag == "-" {
+				subFields := lookupStructFields(ft, field.Index)
+				result = append(result, subFields...)
+				continue
+			}
+			if isSpecialJSONStructure(field) {
+				result = append(result, field)
+				continue
+			}
+			subFields := lookupStructFields(ft, field.Index)
 			result = append(result, subFields...)
-		} else {
-			result = append(result, f)
+			continue
 		}
+
+		if tag == "" || tag == "-" {
+			continue
+		}
+		result = append(result, field)
 	}
 	return result
 }
