@@ -42,3 +42,34 @@ func TestLookupStructFields_EmbeddedFlatten(t *testing.T) {
 		}
 	}
 }
+
+func TestConvertStructToTable_AutoInferType(t *testing.T) {
+	type AutoUser struct {
+		ID     int64   `db:"pk"`
+		Name   string  `db:"name=name"`
+		Score  float64 `db:"name=score"`
+		Active bool    `db:"name=active"`
+		Avatar []byte  `db:"name=avatar"`
+	}
+	td, err := ConvertStructToTable("auto_users", reflect.TypeOf(AutoUser{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]string{
+		"id":     "bigint",
+		"name":   "text",
+		"score":  "double precision",
+		"active": "boolean",
+		"avatar": "bytea",
+	}
+	for _, col := range td.Columns {
+		want, ok := tests[col.Name]
+		if !ok {
+			continue
+		}
+		got := col.Type.String()
+		if got != want {
+			t.Errorf("column %q type = %q, want %q", col.Name, got, want)
+		}
+	}
+}
