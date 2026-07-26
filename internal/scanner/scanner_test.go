@@ -1313,3 +1313,136 @@ var _ = mirage.Register(mirage.Enum{
 		t.Errorf("struct name = %q, want UserRole", decls[0].Enum.StructName)
 	}
 }
+
+func TestScan_EmbeddedStructEndToEnd(t *testing.T) {
+	src := `package test
+import (
+	"time"
+	mirage "github.com/justblue/mirage"
+)
+type Timestamps struct {
+	CreatedAt time.Time ` + "`" + `db:"name=created_at,type=timestamptz,notnull"` + "`" + `
+	UpdatedAt time.Time ` + "`" + `db:"name=updated_at,type=timestamptz,notnull"` + "`" + `
+}
+type User struct {
+	ID        int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
+	Timestamps
+	Name string ` + "`" + `db:"name=name,type=text,notnull"` + "`" + `
+}
+var _ = mirage.Register(mirage.Table{StructName: "User", Name: "users"})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var userDecl *RawDecl
+	for i := range decls {
+		if decls[i].Kind == DeclTable && decls[i].GoName == "User" {
+			userDecl = &decls[i]
+		}
+	}
+	if userDecl == nil {
+		t.Fatal("no User table decl found")
+	}
+	if len(userDecl.EmbeddedTypes) != 1 || userDecl.EmbeddedTypes[0] != "Timestamps" {
+		t.Errorf("embedded types = %v, want [Timestamps]", userDecl.EmbeddedTypes)
+	}
+	if len(userDecl.Fields) != 2 {
+		fieldNames := make([]string, len(userDecl.Fields))
+		for i, f := range userDecl.Fields {
+			fieldNames[i] = f.GoName
+		}
+		t.Fatalf("got %d direct fields %v, want 2 (ID, Name)", len(userDecl.Fields), fieldNames)
+	}
+}
+
+func TestScan_SortOrder(t *testing.T) {
+	src := `package test
+import mirage "github.com/justblue/mirage"
+type Item struct {
+	Z string ` + "`" + `db:"name=z,type=text,sort_order=40"` + "`" + `
+	A string ` + "`" + `db:"name=a,type=text,sort_order=10"` + "`" + `
+	M string ` + "`" + `db:"name=m,type=text,sort_order=20"` + "`" + `
+}
+var _ = mirage.Register(mirage.Table{StructName: "Item", Name: "items"})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("got %d decls, want 1", len(decls))
+	}
+	expectedSortOrders := map[string]string{"Z": "40", "A": "10", "M": "20"}
+	for _, f := range decls[0].Fields {
+		want, ok := expectedSortOrders[f.GoName]
+		if ok {
+			got := f.Attrs.String("sort_order", "")
+			if got != want {
+				t.Errorf("field %s sort_order = %q, want %q", f.GoName, got, want)
+			}
+		}
+	}
+}
+
+func TestScan_CompositeConstraintsEndToEnd(t *testing.T) {
+	src := `package test
+import mirage "github.com/justblue/mirage"
+type Order struct {
+	ID        int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
+	UserID    int64  ` + "`" + `db:"name=user_id,type=bigint"` + "`" + `
+	ProductID int64  ` + "`" + `db:"name=product_id,type=bigint"` + "`" + `
+	Status    string ` + "`" + `db:"name=status,type=varchar(50)"` + "`" + `
+}
+var _ = mirage.Register(mirage.Table{
+	StructName: "Order",
+	Name:       "orders",
+	Uniques: []mirage.UniqueConstraint{
+		{Name: "uq_user_product", Columns: []string{"user_id", "product_id"}},
+	},
+	Indexes: []mirage.Index{
+		{Name: "idx_status", Columns: []string{"status"}},
+	},
+})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("got %d decls, want 1", len(decls))
+	}
+
+	// Verify composite unique constraint flows through
+	uqArgs := decls[0].TableAttrs.AllArgs("uq")
+	if len(uqArgs) != 1 {
+		t.Fatalf("uq args count = %d, want 1", len(uqArgs))
+	}
+	if len(uqArgs[0]) != 2 || uqArgs[0][0] != "user_id" || uqArgs[0][1] != "product_id" {
+		t.Errorf("uq args = %v, want [user_id product_id]", uqArgs[0])
+	}
+
+	// Verify composite index flows through
+	idxArgs := decls[0].TableAttrs.AllArgs("index")
+	if len(idxArgs) != 1 {
+		t.Fatalf("index args count = %d, want 1", len(idxArgs))
+	}
+	if len(idxArgs[0]) != 1 || idxArgs[0][0] != "status" {
+		t.Errorf("index args = %v, want [status]", idxArgs[0])
+	}
+}
