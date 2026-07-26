@@ -250,3 +250,41 @@ func TestResetRegistryClearsAll(t *testing.T) {
 		t.Fatalf("expected 0 functions after reset, got %d", len(GetRegisteredFunctions()))
 	}
 }
+
+func TestRegister_Enum(t *testing.T) {
+	r := &Registry{}
+	err := r.Register(Enum{
+		StructName: "UserRole",
+		Name:       "user_role",
+		Values:     []string{"admin", "member"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	enums := r.Enums()
+	if len(enums) != 1 {
+		t.Fatalf("got %d enums, want 1", len(enums))
+	}
+	if enums[0].Name != "user_role" {
+		t.Errorf("name = %q, want user_role", enums[0].Name)
+	}
+	if enums[0].StructName != "UserRole" {
+		t.Errorf("struct name = %q, want UserRole", enums[0].StructName)
+	}
+	if len(enums[0].Values) != 2 {
+		t.Errorf("values = %v, want 2 values", enums[0].Values)
+	}
+}
+
+func TestRegister_Enum_Deduplication(t *testing.T) {
+	r := &Registry{}
+	r.Register(Enum{Name: "user_role", Values: []string{"admin", "member"}})
+	r.Register(Enum{Name: "user_role", Values: []string{"admin", "member", "viewer"}})
+	enums := r.Enums()
+	if len(enums) != 1 {
+		t.Fatalf("got %d enums, want 1 (dedup)", len(enums))
+	}
+	if len(enums[0].Values) != 2 {
+		t.Errorf("values = %v, want original 2 values", enums[0].Values)
+	}
+}

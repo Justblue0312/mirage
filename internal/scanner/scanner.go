@@ -230,15 +230,23 @@ func resolveEnums(decls []RawDecl) (bySQLName, byGoName map[string]schema.Enum) 
 		if d.Kind != DeclEnum {
 			continue
 		}
-		sqlName := d.TableAttrs.String("name", SnakeCase(d.GoName))
-		e := schema.Enum{
-			StructName:  d.GoName,
-			SearchPath:  d.TableAttrs.String("schema", "public"),
-			Name:        sqlName,
-			Values:      d.EnumValues,
-			Description: d.TableAttrs.String("comment", ""),
+		var e schema.Enum
+		if d.Enum != nil {
+			e = *d.Enum
+		} else {
+			sqlName := d.TableAttrs.String("name", SnakeCase(d.GoName))
+			e = schema.Enum{
+				StructName:  d.GoName,
+				SearchPath:  d.TableAttrs.String("schema", "public"),
+				Name:        sqlName,
+				Values:      d.EnumValues,
+				Description: d.TableAttrs.String("comment", ""),
+			}
 		}
-		bySQLName[sqlName] = e
+		if e.Name == "" {
+			e.Name = SnakeCase(d.GoName)
+		}
+		bySQLName[e.Name] = e
 		byGoName[d.GoName] = e
 	}
 	return bySQLName, byGoName

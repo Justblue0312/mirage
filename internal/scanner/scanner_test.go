@@ -1274,3 +1274,42 @@ var _ = mirage.Register(mirage.Table{
 		t.Errorf("index args = %v, want [[status]]", idxArgs)
 	}
 }
+
+func TestExtractRegisteredObject_Enum(t *testing.T) {
+	src := `package test
+import mirage "github.com/justblue/mirage"
+var _ = mirage.Register(mirage.Enum{
+	StructName: "UserRole",
+	Name:       "user_role",
+	Values:     []string{"admin", "member", "viewer"},
+	Description: "User role enumeration",
+})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("got %d decls, want 1", len(decls))
+	}
+	if decls[0].Kind != DeclEnum {
+		t.Errorf("kind = %v, want DeclEnum", decls[0].Kind)
+	}
+	if len(decls[0].EnumValues) != 3 {
+		t.Errorf("values = %v, want 3 values", decls[0].EnumValues)
+	}
+	if decls[0].Enum == nil {
+		t.Fatal("Enum field is nil")
+	}
+	if decls[0].Enum.Name != "user_role" {
+		t.Errorf("name = %q, want user_role", decls[0].Enum.Name)
+	}
+	if decls[0].Enum.StructName != "UserRole" {
+		t.Errorf("struct name = %q, want UserRole", decls[0].Enum.StructName)
+	}
+}

@@ -18,6 +18,7 @@ type Grant = schemapkg.Grant
 type Policy = schemapkg.Policy
 type Extension = schemapkg.Extension
 type Table = schemapkg.Table
+type Enum = schemapkg.Enum
 type Partition = schemapkg.Partition
 
 // Registry holds a set of database objects (functions, views, triggers, etc.)
@@ -36,6 +37,7 @@ type Registry struct {
 	grants            []Grant
 	policies          []Policy
 	tables            []Table
+	enums             []Enum
 }
 
 // NewRegistry returns a fresh, empty Registry.
@@ -163,8 +165,19 @@ func (r *Registry) Register(items ...any) error {
 			if !exists {
 				r.tables = append(r.tables, v)
 			}
+		case Enum:
+			exists := false
+			for _, e := range r.enums {
+				if e.Name == v.Name {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				r.enums = append(r.enums, v)
+			}
 		default:
-			return fmt.Errorf("register: unsupported type %T; expected one of Function, View, MaterializedView, Trigger, Procedure, Grant, Policy, Extension, Table", it)
+			return fmt.Errorf("register: unsupported type %T; expected one of Function, View, MaterializedView, Trigger, Procedure, Grant, Policy, Extension, Table, Enum", it)
 		}
 	}
 
@@ -243,6 +256,15 @@ func (r *Registry) Extensions() []Extension {
 	return result
 }
 
+// Enums returns a copy of all registered enums.
+func (r *Registry) Enums() []Enum {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]Enum, len(r.enums))
+	copy(result, r.enums)
+	return result
+}
+
 // Tables returns a copy of all registered tables.
 func (r *Registry) Tables() []Table {
 	r.mu.Lock()
@@ -278,6 +300,7 @@ func (r *Registry) Reset() {
 	r.grants = nil
 	r.policies = nil
 	r.tables = nil
+	r.enums = nil
 }
 
 // Register stores one or more database objects in the process-global registry.
@@ -313,6 +336,9 @@ func GetRegisteredPolicies() []Policy { return registry.Policies() }
 
 // GetRegisteredExtensions returns all extensions registered on the global registry.
 func GetRegisteredExtensions() []Extension { return registry.Extensions() }
+
+// GetRegisteredEnums returns all enums registered on the global registry.
+func GetRegisteredEnums() []Enum { return registry.Enums() }
 
 // GetRegisteredTables returns all tables registered on the global registry.
 func GetRegisteredTables() []Table { return registry.Tables() }

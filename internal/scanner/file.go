@@ -47,6 +47,7 @@ type RawDecl struct {
 	Policy           *schema.Policy
 	Extension        *schema.Extension
 	TableConfig      *schema.Table
+	Enum             *schema.Enum
 }
 
 type RawField struct {
@@ -734,6 +735,13 @@ func extractRegisteredObject(fset *token.FileSet, arg ast.Expr, filePath string,
 			FilePath: filePath, Line: line, Kind: DeclTableConfig,
 			GoName: tc.StructName, TableConfig: tc,
 		})
+	case strings.HasSuffix(typeName, "Enum"):
+		e := parseEnumLiteral(cl)
+		*decls = append(*decls, RawDecl{
+			FilePath: filePath, Line: line, Kind: DeclEnum,
+			GoName: e.Name, Enum: e,
+			EnumValues: e.Values,
+		})
 	}
 }
 
@@ -1169,6 +1177,33 @@ func parseStringSliceLit(expr ast.Expr) []string {
 		result = append(result, extractStringLit(elt))
 	}
 	return result
+}
+
+func parseEnumLiteral(cl *ast.CompositeLit) *schema.Enum {
+	e := &schema.Enum{}
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch key.Name {
+		case "StructName":
+			e.StructName = extractStringLit(kv.Value)
+		case "Name":
+			e.Name = extractStringLit(kv.Value)
+		case "Description":
+			e.Description = extractStringLit(kv.Value)
+		case "SearchPath":
+			e.SearchPath = extractStringLit(kv.Value)
+		case "Values":
+			e.Values = parseStringSliceLit(kv.Value)
+		}
+	}
+	return e
 }
 
 func parseFunctionArgumentList(expr ast.Expr) []schema.FunctionArgument {
