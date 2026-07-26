@@ -16,7 +16,7 @@ type lockWidget struct {
 }
 
 func init() {
-	_ = mirage.Register(mirage.TableConfig{StructName: "lockWidget", Name: "lock_widgets_test"})
+	_ = mirage.Register(mirage.Table{StructName: "lockWidget", Name: "lock_widgets_test"})
 }
 
 func setupLockWidgetsTable(t *testing.T, db *mirage.DB) {

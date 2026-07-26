@@ -39,7 +39,7 @@ type widget struct {
 }
 
 func init() {
-	_ = mirage.Register(mirage.TableConfig{StructName: "widget", Name: "widgets_repo_test"})
+	_ = mirage.Register(mirage.Table{StructName: "widget", Name: "widgets_repo_test"})
 }
 
 func setupWidgetsTable(t *testing.T, db *mirage.DB) {

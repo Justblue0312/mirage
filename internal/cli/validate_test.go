@@ -18,10 +18,10 @@ const validUserModel = `package models
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "User",
 	Name:       "users",
-	Comment:    "Users table",
+	Description:    "Users table",
 })
 
 type User struct {
@@ -43,7 +43,7 @@ const warnOnlyModel = `package models
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Order",
 	Name:       "orders",
 })
@@ -61,11 +61,11 @@ const duplicateTableModel = `package models
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Account",
 	Name:       "accounts",
 })
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "LegacyAccount",
 	Name:       "accounts",
 })

@@ -30,9 +30,9 @@ type User struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
-		StructName: "User",
-		Name:       "users",
-		Comment:    "User accounts with authentication and profile data",
+	mirage.Register(mirage.Table{
+		StructName:  "User",
+		Name:        "users",
+		Description: "User accounts with authentication and profile data",
 	})
 }

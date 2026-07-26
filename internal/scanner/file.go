@@ -46,7 +46,7 @@ type RawDecl struct {
 	Grant            *schema.Grant
 	Policy           *schema.Policy
 	Extension        *schema.Extension
-	TableConfig      *schema.TableConfig
+	TableConfig      *schema.Table
 }
 
 type RawField struct {
@@ -119,7 +119,7 @@ func ParseFile(fset *token.FileSet, node *ast.File, filePath string) ([]RawDecl,
 			tcDecl := findTableConfigForStruct(decls, ts.Name.Name)
 			if tcDecl != nil {
 				fields, embeddedTypes := extractStructFields(fset, st, filePath)
-				tableAttrs := buildAttrsFromTableConfig(tcDecl.TableConfig)
+				tableAttrs := buildAttrsFromTable(tcDecl.TableConfig)
 				decls = append(decls, RawDecl{
 					FilePath:      filePath,
 					Line:          pos.Line,
@@ -167,7 +167,7 @@ func findTableConfigForStruct(configs []RawDecl, goName string) *RawDecl {
 	return nil
 }
 
-func buildAttrsFromTableConfig(tc *schema.TableConfig) Attrs {
+func buildAttrsFromTable(tc *schema.Table) Attrs {
 	attrs := Attrs{}
 	if tc.Name != "" {
 		attrs["name"] = AttrValue{Value: tc.Name}
@@ -175,20 +175,20 @@ func buildAttrsFromTableConfig(tc *schema.TableConfig) Attrs {
 	if tc.SearchPath != "" {
 		attrs["schema"] = AttrValue{Value: tc.SearchPath}
 	}
-	if tc.Comment != "" {
-		attrs["comment"] = AttrValue{Value: tc.Comment}
+	if tc.Description != "" {
+		attrs["comment"] = AttrValue{Value: tc.Description}
 	}
 	if tc.Options != "" {
 		attrs["options"] = AttrValue{Value: tc.Options}
 	}
-	if tc.Type != "" {
-		attrs["type"] = AttrValue{Value: tc.Type}
+	if tc.Type != schema.InvalidTableType {
+		attrs["type"] = AttrValue{Value: tc.Type.String()}
 	}
 	if tc.Ignore {
 		attrs["ignore"] = AttrValue{Flag: true}
 	}
-	if len(tc.Partition) >= 2 {
-		attrs["partitioned"] = AttrValue{Args: tc.Partition}
+	if tc.Partitioned != nil {
+		attrs["partitioned"] = AttrValue{Args: []string{tc.Partitioned.Strategy, tc.Partitioned.Column}}
 	}
 	return attrs
 }
@@ -694,8 +694,8 @@ func extractRegisteredObject(fset *token.FileSet, arg ast.Expr, filePath string,
 			FilePath: filePath, Line: line, Kind: DeclPolicy,
 			GoName: p.Name, Policy: p,
 		})
-	case typeName == "TableConfig" || strings.HasSuffix(typeName, "TableConfig"):
-		tc := parseTableConfigLiteral(cl)
+	case typeName == "Table" || strings.HasSuffix(typeName, "Table"):
+		tc := parseTableLiteral(cl)
 		*decls = append(*decls, RawDecl{
 			FilePath: filePath, Line: line, Kind: DeclTableConfig,
 			GoName: tc.StructName, TableConfig: tc,
@@ -910,8 +910,8 @@ func parsePolicyLiteral(cl *ast.CompositeLit) *schema.Policy {
 	return p
 }
 
-func parseTableConfigLiteral(cl *ast.CompositeLit) *schema.TableConfig {
-	tc := &schema.TableConfig{}
+func parseTableLiteral(cl *ast.CompositeLit) *schema.Table {
+	tc := &schema.Table{}
 	for _, elt := range cl.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
@@ -928,19 +928,47 @@ func parseTableConfigLiteral(cl *ast.CompositeLit) *schema.TableConfig {
 			tc.Name = extractStringLit(kv.Value)
 		case "SearchPath":
 			tc.SearchPath = extractStringLit(kv.Value)
-		case "Comment":
-			tc.Comment = extractStringLit(kv.Value)
+		case "Description":
+			tc.Description = extractStringLit(kv.Value)
 		case "Options":
 			tc.Options = extractStringLit(kv.Value)
 		case "Type":
-			tc.Type = extractStringLit(kv.Value)
-		case "Partition":
-			tc.Partition = parseStringSlice(kv.Value)
+			tc.Type = schema.ParseTableType(extractStringLit(kv.Value))
+		case "Partitioned":
+			tc.Partitioned = parsePartitionLiteral(kv.Value)
 		case "Ignore":
 			tc.Ignore = extractBoolLit(kv.Value)
 		}
 	}
 	return tc
+}
+
+func parsePartitionLiteral(expr ast.Expr) *schema.Partition {
+	if u, ok := expr.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		expr = u.X
+	}
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	p := &schema.Partition{}
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch key.Name {
+		case "Strategy":
+			p.Strategy = extractStringLit(kv.Value)
+		case "Column":
+			p.Column = extractStringLit(kv.Value)
+		}
+	}
+	return p
 }
 
 func parseFunctionArgumentList(expr ast.Expr) []schema.FunctionArgument {

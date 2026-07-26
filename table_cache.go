@@ -47,8 +47,8 @@ func resolveTableName(typ reflect.Type, reg *Registry) string {
 	if reg == nil {
 		reg = registry // fall back to global singleton
 	}
-	// 1. Check registry for a matching TableConfig
-	if tc := reg.TableConfigByGoName(typ.Name()); tc != nil && tc.Name != "" {
+	// 1. Check registry for a matching Table
+	if tc := reg.TableByGoName(typ.Name()); tc != nil && tc.Name != "" {
 		return tc.Name
 	}
 	// 2. Legacy fallback: TableName() interface

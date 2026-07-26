@@ -15,7 +15,7 @@ func TestResolveTableName_Registry(t *testing.T) {
 
 	type testWidget struct{}
 
-	Register(TableConfig{StructName: "testWidget", Name: "custom_widgets"})
+	Register(Table{StructName: "testWidget", Name: "custom_widgets"})
 
 	typ := reflect.TypeOf(testWidget{})
 	name := resolveTableName(typ, nil)
@@ -28,7 +28,7 @@ func TestResolveTableName_RegistryOverTableName(t *testing.T) {
 	ResetRegistry()
 	defer ResetRegistry()
 
-	Register(TableConfig{StructName: "namedWidget", Name: "registry_wins"})
+	Register(Table{StructName: "namedWidget", Name: "registry_wins"})
 
 	typ := reflect.TypeOf(namedWidget{})
 	name := resolveTableName(typ, nil)
@@ -67,7 +67,7 @@ func TestResolveTableName_EmptyRegistryName(t *testing.T) {
 
 	type gizmo struct{}
 
-	Register(TableConfig{StructName: "gizmo", Name: ""})
+	Register(Table{StructName: "gizmo", Name: ""})
 
 	typ := reflect.TypeOf(gizmo{})
 	name := resolveTableName(typ, nil)
@@ -83,7 +83,7 @@ func TestResolveTableName_CustomRegistry(t *testing.T) {
 	type demoItem struct{}
 
 	customReg := NewRegistry()
-	customReg.Register(TableConfig{StructName: "demoItem", Name: "custom_items"})
+	customReg.Register(Table{StructName: "demoItem", Name: "custom_items"})
 
 	typ := reflect.TypeOf(demoItem{})
 	if name := resolveTableName(typ, nil); name != "demo_items" {
@@ -101,7 +101,7 @@ func TestCachedTable_IsolatesBetweenRegistries(t *testing.T) {
 	type demoCacheItem struct{}
 
 	customReg := NewRegistry()
-	customReg.Register(TableConfig{StructName: "demoCacheItem", Name: "isolated_items"})
+	customReg.Register(Table{StructName: "demoCacheItem", Name: "isolated_items"})
 
 	typ := reflect.TypeOf(demoCacheItem{})
 	tbl1, err := cachedTable(typ, nil)
@@ -126,7 +126,7 @@ func TestNewRepository_WithRegistry(t *testing.T) {
 	}
 
 	customReg := NewRegistry()
-	customReg.Register(TableConfig{StructName: "demoRepoItem", Name: "repo_custom_items"})
+	customReg.Register(Table{StructName: "demoRepoItem", Name: "repo_custom_items"})
 
 	db := &DB{}
 	repo := NewRepository[demoRepoItem](db, WithRegistry(customReg))

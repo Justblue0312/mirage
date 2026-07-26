@@ -81,24 +81,24 @@ type ProductVariant struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
-		StructName: "Category",
-		Name:       "categories",
-		Comment:    "Product category tree with self-referencing hierarchy",
+	mirage.Register(mirage.Table{
+		StructName:  "Category",
+		Name:        "categories",
+		Description: "Product category tree with self-referencing hierarchy",
 	})
-	mirage.Register(mirage.TableConfig{
-		StructName: "Product",
-		Name:       "products",
-		Comment:    "Product catalog with pricing and inventory",
+	mirage.Register(mirage.Table{
+		StructName:  "Product",
+		Name:        "products",
+		Description: "Product catalog with pricing and inventory",
 	})
-	mirage.Register(mirage.TableConfig{
-		StructName: "ProductImage",
-		Name:       "product_images",
-		Comment:    "Product image gallery with ordering",
+	mirage.Register(mirage.Table{
+		StructName:  "ProductImage",
+		Name:        "product_images",
+		Description: "Product image gallery with ordering",
 	})
-	mirage.Register(mirage.TableConfig{
-		StructName: "ProductVariant",
-		Name:       "product_variants",
-		Comment:    "Product variants for size/color/etc",
+	mirage.Register(mirage.Table{
+		StructName:  "ProductVariant",
+		Name:        "product_variants",
+		Description: "Product variants for size/color/etc",
 	})
 }

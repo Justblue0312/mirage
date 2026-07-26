@@ -20,7 +20,7 @@ type gadget struct {
 }
 
 func init() {
-	_ = mirage.Register(mirage.TableConfig{StructName: "gadget", Name: "gadgets_batch_delete_test"})
+	_ = mirage.Register(mirage.Table{StructName: "gadget", Name: "gadgets_batch_delete_test"})
 }
 
 // TestRepository_BatchDeleteCustomPKType is the regression/verification test

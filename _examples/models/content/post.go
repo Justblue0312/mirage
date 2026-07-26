@@ -70,24 +70,24 @@ type PostTag struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
-		StructName: "Post",
-		Name:       "posts",
-		Comment:    "Blog posts with content and metadata",
+	mirage.Register(mirage.Table{
+		StructName:  "Post",
+		Name:        "posts",
+		Description: "Blog posts with content and metadata",
 	})
-	mirage.Register(mirage.TableConfig{
-		StructName: "Comment",
-		Name:       "comments",
-		Comment:    "Threaded comments on posts",
+	mirage.Register(mirage.Table{
+		StructName:  "Comment",
+		Name:        "comments",
+		Description: "Threaded comments on posts",
 	})
-	mirage.Register(mirage.TableConfig{
-		StructName: "Tag",
-		Name:       "tags",
-		Comment:    "Content tags for categorization",
+	mirage.Register(mirage.Table{
+		StructName:  "Tag",
+		Name:        "tags",
+		Description: "Content tags for categorization",
 	})
-	mirage.Register(mirage.TableConfig{
-		StructName: "PostTag",
-		Name:       "post_tags",
-		Comment:    "Many-to-many relationship between posts and tags",
+	mirage.Register(mirage.Table{
+		StructName:  "PostTag",
+		Name:        "post_tags",
+		Description: "Many-to-many relationship between posts and tags",
 	})
 }

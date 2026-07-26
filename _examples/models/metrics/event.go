@@ -29,10 +29,10 @@ type Event struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
-		StructName: "Event",
-		Name:       "events",
-		Comment:    "User activity events for analytics",
-		Partition:  []string{"RANGE", "created_at"},
+	mirage.Register(mirage.Table{
+		StructName:  "Event",
+		Name:        "events",
+		Description: "User activity events for analytics",
+		Partitioned: &mirage.Partition{Strategy: "RANGE", Column: "created_at"},
 	})
 }

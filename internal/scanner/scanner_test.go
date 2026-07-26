@@ -112,10 +112,10 @@ func TestParseFile_SingleStruct(t *testing.T) {
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "User",
 	Name:       "users",
-	Comment:    "Users table",
+	Description:    "Users table",
 })
 type User struct {
 	ID    int64  ` + "`" + `db:"pk,identity,type=bigserial"` + "`" + `
@@ -186,7 +186,7 @@ const (
 	StatusActive  Status = "active"
 	StatusDeleted Status = "deleted"
 )
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Post",
 	Name:       "posts",
 })
@@ -254,7 +254,7 @@ import (
 type Timestamps struct {
 	CreatedAt time.Time ` + "`" + `db:"name=created_at,type=timestamptz,notnull"` + "`" + `
 }
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "User",
 	Name:       "users",
 })
@@ -293,7 +293,7 @@ func TestParseFile_PKArgs(t *testing.T) {
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Foo",
 	Name:       "foo",
 })
@@ -325,7 +325,7 @@ func TestParseFile_CheckConstraint(t *testing.T) {
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Foo",
 	Name:       "foo",
 })
@@ -847,7 +847,7 @@ var _ = mirage.Register(mirage.Extension{
 // The scanner fans out over goroutines and previously appended Tables/Grants/
 // Policies in goroutine-completion order, making output nondeterministic and
 // breaking the reflect.DeepEqual / JSON fast-path in the diff engine.
-func TestParseFile_TableConfig_InInit(t *testing.T) {
+func TestParseFile_Table_InInit(t *testing.T) {
 	src := `package test
 
 import mirage "github.com/justblue/mirage"
@@ -858,10 +858,10 @@ type User struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
+	mirage.Register(mirage.Table{
 		StructName: "User",
 		Name:       "app_users",
-		Comment:    "Application users",
+		Description:    "Application users",
 	})
 }`
 	fset := token.NewFileSet()
@@ -894,7 +894,7 @@ func init() {
 	}
 }
 
-func TestParseFile_TableConfig_AllAttributes(t *testing.T) {
+func TestParseFile_Table_AllAttributes(t *testing.T) {
 	src := `package test
 
 import mirage "github.com/justblue/mirage"
@@ -904,14 +904,14 @@ type Widget struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
+	mirage.Register(mirage.Table{
 		StructName: "Widget",
 		Name:       "widgets",
 		SearchPath: "inventory",
-		Comment:    "Product widgets",
+		Description:    "Product widgets",
 		Options:    "UNLOGGED",
 		Type:       "base table",
-		Partition:  []string{"RANGE", "id"},
+		Partitioned: &mirage.Partition{Strategy: "RANGE", Column: "id"},
 		Ignore:     false,
 	})
 }`
@@ -960,7 +960,7 @@ func init() {
 	}
 }
 
-func TestParseFile_StructWithoutTableConfig(t *testing.T) {
+func TestParseFile_StructWithoutTable(t *testing.T) {
 	src := `package test
 
 type Orphan struct {
@@ -987,7 +987,7 @@ type Orphan struct {
 	}
 }
 
-func TestParseFile_TableConfig_Ignore(t *testing.T) {
+func TestParseFile_Table_Ignore(t *testing.T) {
 	src := `package test
 
 import mirage "github.com/justblue/mirage"
@@ -997,7 +997,7 @@ type Secret struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
+	mirage.Register(mirage.Table{
 		StructName: "Secret",
 		Name:       "secrets",
 		Ignore:     true,
@@ -1030,7 +1030,7 @@ func init() {
 	}
 }
 
-func TestScan_TableConfig_Pipeline(t *testing.T) {
+func TestScan_Table_Pipeline(t *testing.T) {
 	dir := t.TempDir()
 
 	src := `package models
@@ -1048,12 +1048,12 @@ type InternalConfig struct {
 }
 
 func init() {
-	mirage.Register(mirage.TableConfig{
+	mirage.Register(mirage.Table{
 		StructName: "User",
 		Name:       "app_users",
-		Comment:    "Application users table",
+		Description:    "Application users table",
 	})
-	mirage.Register(mirage.TableConfig{
+	mirage.Register(mirage.Table{
 		StructName: "InternalConfig",
 		Name:       "internal_config",
 		Ignore:     true,
@@ -1107,10 +1107,10 @@ func TestScan_Deterministic(t *testing.T) {
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{StructName: "Alpha", Name: "alpha"})
-var _ = mirage.Register(mirage.TableConfig{StructName: "Beta", Name: "beta"})
-var _ = mirage.Register(mirage.TableConfig{StructName: "Gamma", Name: "gamma"})
-var _ = mirage.Register(mirage.TableConfig{StructName: "Delta", Name: "delta"})
+var _ = mirage.Register(mirage.Table{StructName: "Alpha", Name: "alpha"})
+var _ = mirage.Register(mirage.Table{StructName: "Beta", Name: "beta"})
+var _ = mirage.Register(mirage.Table{StructName: "Gamma", Name: "gamma"})
+var _ = mirage.Register(mirage.Table{StructName: "Delta", Name: "delta"})
 
 type Alpha struct {
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
@@ -1166,7 +1166,7 @@ func TestScan_ColumnTypeChangeUsing(t *testing.T) {
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{StructName: "Widget", Name: "widgets"})
+var _ = mirage.Register(mirage.Table{StructName: "Widget", Name: "widgets"})
 
 type Widget struct {
 	ID    int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `

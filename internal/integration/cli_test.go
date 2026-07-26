@@ -15,7 +15,7 @@ const cliTestTableModel = `package models
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Widget",
 	Name:       "widgets",
 })

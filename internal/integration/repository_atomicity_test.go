@@ -15,7 +15,7 @@ type atomicWidget struct {
 }
 
 func init() {
-	_ = mirage.Register(mirage.TableConfig{StructName: "atomicWidget", Name: "atomic_widgets_test"})
+	_ = mirage.Register(mirage.Table{StructName: "atomicWidget", Name: "atomic_widgets_test"})
 }
 
 func setupAtomicWidgetsTable(t *testing.T, db *mirage.DB) {

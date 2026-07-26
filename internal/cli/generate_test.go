@@ -206,7 +206,7 @@ const idempotentModelV1 = `package models
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Product",
 	Name:       "products",
 })
@@ -221,7 +221,7 @@ const idempotentModelV2 = `package models
 
 import "github.com/justblue/mirage"
 
-var _ = mirage.Register(mirage.TableConfig{
+var _ = mirage.Register(mirage.Table{
 	StructName: "Product",
 	Name:       "products",
 })
