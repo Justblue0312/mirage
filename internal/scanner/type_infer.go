@@ -6,6 +6,13 @@ import "strings"
 // Returns empty string for unknown types (caller should error or skip).
 func goTypeToSQLType(goType string) string {
 	goType = strings.TrimPrefix(goType, "*")
+	if strings.HasSuffix(goType, "[]") {
+		base := strings.TrimSuffix(goType, "[]")
+		if base == "byte" || base == "uint8" {
+			return "bytea"
+		}
+		return ""
+	}
 	if strings.HasPrefix(goType, "[]") {
 		if goType == "[]byte" || goType == "[]uint8" {
 			return "bytea"

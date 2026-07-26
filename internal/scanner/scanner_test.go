@@ -1200,3 +1200,39 @@ type Widget struct {
 		t.Errorf("TypeChangeUsing = %q, want %q", count.TypeChangeUsing, "CAST(count AS integer)")
 	}
 }
+
+func TestResolveColumn_AutoInferType(t *testing.T) {
+	src := `package test
+import mirage "github.com/justblue/mirage"
+type User struct {
+	ID    int64   ` + "`" + `db:"pk"` + "`" + `
+	Name  string  ` + "`" + `db:"name=name"` + "`" + `
+	Email string  ` + "`" + `db:"name=email,notnull"` + "`" + `
+	Age   int32   ` + "`" + `db:"name=age"` + "`" + `
+	Score float64 ` + "`" + `db:"name=score"` + "`" + `
+	Active bool   ` + "`" + `db:"name=active"` + "`" + `
+	Avatar []byte ` + "`" + `db:"name=avatar"` + "`" + `
+}
+var _ = mirage.Register(mirage.Table{StructName: "User", Name: "users"})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("got %d decls, want 1", len(decls))
+	}
+	for _, f := range decls[0].Fields {
+		if f.GoName != "" && f.Attrs.String("type", "") == "" {
+			inferred := goTypeToSQLType(f.GoType)
+			if inferred == "" {
+				t.Errorf("field %q: GoType %q not inferred and no type= tag", f.GoName, f.GoType)
+			}
+		}
+	}
+}
