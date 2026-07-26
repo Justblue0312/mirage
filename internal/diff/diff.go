@@ -22,11 +22,11 @@ func PackagesEqual(a, b *schema.Package) bool {
 }
 
 func PackagesEqualJSON(a, b *schema.Package) (bool, string, string) {
-	ja, err := json.Marshal(a) //nolint:staticcheck // SA1026: PasswordHandler.Encrypt is func, marshals as null
+	ja, err := json.Marshal(a)
 	if err != nil {
 		return false, "", ""
 	}
-	jb, err := json.Marshal(b) //nolint:staticcheck // SA1026: PasswordHandler.Encrypt is func, marshals as null
+	jb, err := json.Marshal(b)
 	if err != nil {
 		return false, "", ""
 	}

@@ -313,17 +313,7 @@ mirage migrate --db "postgres://..." --dry-run
 mirage status --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ```
 
-### 5. Drift Detection
-
-Detect schema changes made outside of mirage migrations:
-
-```bash
-mirage status --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable" --check-drift
-```
-
-This connects to a live PostgreSQL database, reads its catalog, and compares it against the last applied migration snapshot. Drift is detected for: tables (added/dropped columns), enums, indexes, foreign keys, unique constraints, check constraints, and extensions.
-
-### 6. Rollback
+### 5. Rollback
 
 ```bash
 # Roll back last 1 migration

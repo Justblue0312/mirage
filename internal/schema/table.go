@@ -98,7 +98,6 @@ type Table struct {
 	Description        string
 	Type               TableType
 	Columns            []*Column
-	PasswordHandler    *PasswordHandler
 	Strict             bool
 
 	Options     string

@@ -178,17 +178,6 @@ func main() {
 | `--db` | - | Database connection string (optional) |
 | `--dir` | `./migrations` | Migrations directory |
 | `--format` | `table` | Output format: `table` or `json` |
-| `--check-drift` | `false` | Compare live database schema against the last snapshot and report manual changes (requires `--db`) |
-
-#### Drift Detection
-
-`mirage status --check-drift` connects to a live PostgreSQL database, reads its catalog (tables, columns, constraints, enums, etc.), and compares it against the last applied migration snapshot. Any differences are reported as drift events — schema changes made outside of mirage migrations.
-
-```bash
-mirage status --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable" --check-drift
-```
-
-Drift is detected for: tables (added/dropped columns, renamed columns), enums (added/removed values), indexes, foreign keys, unique constraints, check constraints, and extensions.
 
 #### `create`
 

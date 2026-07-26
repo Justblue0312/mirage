@@ -38,9 +38,11 @@ func UQName(table string, cols []string) string {
 // IdxName generates an index name.
 func IdxName(table string, cols []string) string {
 	var s strings.Builder
-	s.WriteString("idx_" + table)
+	s.WriteString("idx_")
+	s.WriteString(table)
 	for _, c := range cols {
-		s.WriteString("_" + c)
+		s.WriteString("_")
+		s.WriteString(c)
 	}
 	return Truncate(s.String())
 }

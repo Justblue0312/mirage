@@ -52,7 +52,7 @@ func ConvertStructToTable(tableName string, typ reflect.Type) (*Table, error) {
 
 		// Auto-infer SQL type from Go field type when no explicit type= tag
 		if col.Type == 0 && col.SQLType == "" {
-			col.Type, col.TypeArgument = inferTypeFromGo(field.Type)
+			col.Type = inferTypeFromGo(field.Type)
 		}
 
 		if col.Name == "" {
@@ -196,49 +196,49 @@ func splitTagParts(raw string) []string {
 	return parts
 }
 
-func inferTypeFromGo(ft reflect.Type) (DataType, string) {
+func inferTypeFromGo(ft reflect.Type) DataType {
 	// Only dereference pointers, not slices/arrays/maps
 	for ft.Kind() == reflect.Pointer {
 		ft = ft.Elem()
 	}
 	switch ft.Kind() {
 	case reflect.Int:
-		return Integer, ""
+		return Integer
 	case reflect.Int8:
-		return SmallInt, ""
+		return SmallInt
 	case reflect.Int16:
-		return SmallInt, ""
+		return SmallInt
 	case reflect.Int32:
-		return Integer, ""
+		return Integer
 	case reflect.Int64:
-		return BigInt, ""
+		return BigInt
 	case reflect.Uint:
-		return Integer, ""
+		return Integer
 	case reflect.Uint8:
-		return SmallInt, ""
+		return SmallInt
 	case reflect.Uint16:
-		return SmallInt, ""
+		return SmallInt
 	case reflect.Uint32:
-		return Integer, ""
+		return Integer
 	case reflect.Uint64:
-		return BigInt, ""
+		return BigInt
 	case reflect.Float32:
-		return Real, ""
+		return Real
 	case reflect.Float64:
-		return Double, ""
+		return Double
 	case reflect.Bool:
-		return Boolean, ""
+		return Boolean
 	case reflect.String:
-		return Text, ""
+		return Text
 	case reflect.Slice:
 		if ft.Elem().Kind() == reflect.Uint8 {
-			return Bytea, ""
+			return Bytea
 		}
 	case reflect.Struct:
 		if ft.PkgPath() == "time" && ft.Name() == "Time" {
-			return TimestampWithTimeZone, ""
+			return TimestampWithTimeZone
 		}
-		return JsonB, ""
+		return JsonB
 	}
-	return Text, ""
+	return Text
 }

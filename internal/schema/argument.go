@@ -98,18 +98,6 @@ func BuildUpdateQuery(value any, columnsToUpdate []string, reportNotFound bool, 
 		field := val.FieldByIndex(col.FieldIndex)
 		value := field.Interface()
 
-		if col.Password && td.PasswordHandler != nil && td.PasswordHandler.canEncrypt() {
-			strVal, ok := value.(string)
-			if ok && strVal != "" {
-				encrypted, encErr := td.PasswordHandler.Encrypt(td.Name, strVal)
-				if encErr != nil {
-					err = fmt.Errorf("encrypt password for column %s: %w", col.Name, encErr)
-					return
-				}
-				value = encrypted
-			}
-		}
-
 		setClauses = append(setClauses, fmt.Sprintf(`%s = $%d`, Quote(col.Name), argIdx))
 		args = append(args, value)
 		argIdx++

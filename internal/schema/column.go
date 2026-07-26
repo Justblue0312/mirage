@@ -82,7 +82,8 @@ func (c *Column) IsGenerated() bool {
 // FieldTagString returns the db struct tag string for this column.
 func (c *Column) FieldTagString(strict bool) string {
 	var b strings.Builder
-	b.WriteString("name=" + c.Name)
+	b.WriteString("name=")
+	b.WriteString(c.Name)
 	if c.TypeArgument != "" {
 		fmt.Fprintf(&b, ",type=%s(%s)", c.Type, c.TypeArgument)
 	} else if c.Type != 0 {
@@ -112,10 +113,12 @@ func (c *Column) FieldTagString(strict bool) string {
 	if c.ReferenceTableName != "" {
 		fmt.Fprintf(&b, ",ref=%s(%s", c.ReferenceTableName, c.ReferenceColumnName)
 		if c.ReferenceOnDelete != "" {
-			b.WriteString(" " + c.ReferenceOnDelete)
+			b.WriteString(" ")
+			b.WriteString(c.ReferenceOnDelete)
 		}
 		if c.ReferenceOnUpdate != "" {
-			b.WriteString(" " + c.ReferenceOnUpdate)
+			b.WriteString(" ")
+			b.WriteString(c.ReferenceOnUpdate)
 		}
 		b.WriteString(")")
 	}

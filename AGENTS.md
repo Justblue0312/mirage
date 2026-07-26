@@ -74,7 +74,6 @@ Set `MIRAGE_TEST_DATABASE_URL` to bypass podman and use your own PostgreSQL inst
 - **Config file**: Optional `mirage.yaml` / `.mirage.yaml` searched from cwd up to filesystem root. All CLI flags fall back to config values when not explicitly set.
 - **Root package `mirage`**: Exports `DB`, `Open()`, `OpenPool()`, `Repository[T]` (CRUD + cache + batch + retry + locking), `UnitOfWork`, `Register()`, raw SQL helpers, transactions, and LISTEN/NOTIFY.
 - **Migration pipeline**: `scanner.Scan()` → `validate.Validate()` → `diff.Diff()` → `generator.Generate()` → SQL files on disk.
-- **Live introspection**: `internal/introspect.FromLiveDatabase()` reads pg_catalog to reconstruct `schema.Package` from a running database, used for drift detection (`mirage status --check-drift`).
 
 ## Key Files
 
@@ -98,7 +97,6 @@ Set `MIRAGE_TEST_DATABASE_URL` to bypass podman and use your own PostgreSQL inst
 | `internal/introspect/introspect.go` | `FromLiveDatabase()` — reconstructs schema.Package from pg_catalog |
 | `internal/introspect/typemap.go` | Reverse Postgres catalog type → schema.DataType mapping |
 | `internal/config/config.go` | `Load()`, YAML config file discovery and parsing |
-| `internal/cli/status.go` | `--check-drift` flag, `runDriftCheck()` for live vs snapshot comparison |
 
 ## Conventions
 

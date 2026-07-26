@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -41,18 +40,6 @@ func extractColumns(td *Table, val reflect.Value, columnsToUse []string) (colNam
 		}
 
 		value := field.Interface()
-
-		if col.Password && td.PasswordHandler != nil && td.PasswordHandler.canEncrypt() {
-			strVal, ok := value.(string)
-			if ok && strVal != "" {
-				encrypted, encErr := td.PasswordHandler.Encrypt(td.Name, strVal)
-				if encErr != nil {
-					err = fmt.Errorf("encrypt password for column %s: %w", col.Name, encErr)
-					return
-				}
-				value = encrypted
-			}
-		}
 
 		colNames = append(colNames, col.Name)
 		colArgs = append(colArgs, value)
