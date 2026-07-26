@@ -22,7 +22,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60.0
+          version: latest
           args: --timeout=5m
 
       # Reuse the exact same gates as CI before shipping a release build,
