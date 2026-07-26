@@ -234,7 +234,7 @@ The `Table` struct supports: `StructName` (required, matches the Go struct name)
 | `default` | `default=NOW()` | Default value |
 | `check` | `check=price >= 0` | CHECK constraint |
 | `ref` | `ref=users.id ON DELETE CASCADE` | Foreign key (space before ON DELETE) |
-| `index` | `index` or `index=gin` | Create index |
+| `index` | `index` or `index=gin` | Create single-column index (multi-column: use `mirage.Index` in `Register()`) |
 | `unique_index` | `unique_index=idx_name` | Create unique index |
 | `generated` | `generated=always` | Generated column |
 | `collate` | `collate=C` | COLLATE clause |

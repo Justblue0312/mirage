@@ -75,7 +75,21 @@ func lookupStructFields(typ reflect.Type, parentIndex []int) []reflect.StructFie
 		}
 		result = append(result, field)
 	}
-	return result
+
+	// De-duplicate by Go field name: later fields (outer struct) win over
+	// earlier fields (embedded struct). Keep only the last occurrence of each name.
+	lastIdx := make(map[string]int) // field name → last index in result
+	for i, f := range result {
+		lastIdx[f.Name] = i
+	}
+	deduped := make([]reflect.StructField, 0, len(lastIdx))
+	for i, f := range result {
+		if lastIdx[f.Name] == i {
+			deduped = append(deduped, f)
+		}
+	}
+
+	return deduped
 }
 
 func isSpecialJSONStructure(field reflect.StructField) bool {

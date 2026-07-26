@@ -79,6 +79,8 @@ type Order struct {
 
 ### Indexes
 
+Single-column indexes use struct tags:
+
 ```go
 func init() {
     mirage.Register(mirage.Table{StructName: "Product", Name: "products"})
@@ -91,6 +93,25 @@ type Product struct {
     SKU   string `db:"name=sku,type=varchar(50),unique_index=idx_product_sku"`
 }
 ```
+
+#### Composite (Multi-Column) Indexes
+
+Use `mirage.Index` in `Register()` for indexes spanning multiple columns:
+
+```go
+func init() {
+    mirage.Register(mirage.Table{
+        StructName: "Order",
+        Name:       "orders",
+        Indexes: []mirage.Index{
+            {Name: "idx_order_customer_date", Columns: []string{"customer_id", "created_at"}},
+            {Name: "idx_order_status", Columns: []string{"status"}, Kind: "gin"},
+        },
+    })
+}
+```
+
+`Index` fields: `Name` (index name), `Columns` (column list), `Kind` (optional: btree/gin/hash/etc), `Sort` (optional: ASC/DESC).
 
 ### Partitioned Tables
 

@@ -1446,3 +1446,55 @@ var _ = mirage.Register(mirage.Table{
 		t.Errorf("index args = %v, want [status]", idxArgs[0])
 	}
 }
+
+func TestScan_OverrideEmbeddedField(t *testing.T) {
+	src := `package test
+import mirage "github.com/justblue/mirage"
+type Base struct {
+	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
+}
+type UserFav struct {
+	Base
+	ID       int64  ` + "`" + `db:"name=fav_id,type=bigint,notnull"` + "`" + `
+	UserID   int64  ` + "`" + `db:"name=user_id,type=bigint,notnull"` + "`" + `
+	Position int    ` + "`" + `db:"name=position,type=int,default=0"` + "`" + `
+}
+var _ = mirage.Register(mirage.Table{StructName: "UserFav", Name: "user_favorites"})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var userFavDecl *RawDecl
+	for i := range decls {
+		if decls[i].Kind == DeclTable && decls[i].GoName == "UserFav" {
+			userFavDecl = &decls[i]
+		}
+	}
+	if userFavDecl == nil {
+		t.Fatal("no UserFav table decl found")
+	}
+
+	// The outer ID field should override the embedded Base.ID.
+	flatFields, _ := flattenFields(*userFavDecl, decls)
+	colNames := make([]string, 0, len(flatFields))
+	for _, f := range flatFields {
+		if f.GoName != "" {
+			colNames = append(colNames, f.Attrs.String("name", SnakeCase(f.GoName)))
+		}
+	}
+	// Should NOT contain "id" from Base — only fav_id, user_id, position.
+	for _, cn := range colNames {
+		if cn == "id" {
+			t.Errorf("embedded Base.ID was not overridden; got columns %v", colNames)
+		}
+	}
+	if len(colNames) != 3 {
+		t.Errorf("got %d columns %v, want 3 (fav_id, user_id, position)", len(colNames), colNames)
+	}
+}

@@ -289,6 +289,10 @@ func buildTableShells(decls []RawDecl) (tableMap map[string]*schema.Table, table
 // embedded structs (depth-first, de-duplicated). It returns the combined field
 // slice and the count of leading fields that came from embedded types, which
 // callers use to apply per-override rules only to embedded-derived columns.
+//
+// When an outer struct field has the same Go name as an embedded field, the
+// outer field wins — the embedded field is dropped entirely. This allows full
+// attribute override (column name, type, constraints) without the override tag.
 func flattenFields(d RawDecl, decls []RawDecl) (allFields []RawField, embeddedCount int) {
 	seenEmbedded := make(map[string]bool)
 	var resolveEmbedded func(embeddedTypes []string)
@@ -310,6 +314,33 @@ func flattenFields(d RawDecl, decls []RawDecl) (allFields []RawField, embeddedCo
 	resolveEmbedded(d.EmbeddedTypes)
 	embeddedCount = len(allFields)
 	allFields = append(allFields, d.Fields...)
+
+	// De-duplicate by Go name: outer fields override embedded fields.
+	outerGoNames := make(map[string]bool, len(d.Fields))
+	for _, f := range d.Fields {
+		if f.GoName != "" {
+			outerGoNames[f.GoName] = true
+		}
+	}
+	if len(outerGoNames) > 0 {
+		n := 0
+		for i, f := range allFields {
+			if i < embeddedCount && f.GoName != "" && outerGoNames[f.GoName] {
+				continue // drop embedded field overridden by outer
+			}
+			allFields[n] = f
+			n++
+		}
+		allFields = allFields[:n]
+		embeddedCount = 0
+		for _, f := range allFields {
+			if f.GoName != "" && outerGoNames[f.GoName] {
+				break
+			}
+			embeddedCount++
+		}
+	}
+
 	return allFields, embeddedCount
 }
 

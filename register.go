@@ -20,6 +20,11 @@ type Extension = schemapkg.Extension
 type Table = schemapkg.Table
 type Enum = schemapkg.Enum
 type Partition = schemapkg.Partition
+type UniqueConstraint = schemapkg.UniqueConstraint
+type Index = schemapkg.Index
+type ForeignKey = schemapkg.ForeignKey
+type CheckConstraint = schemapkg.CheckConstraint
+type PrimaryKey = schemapkg.PrimaryKey
 
 // Registry holds a set of database objects (functions, views, triggers, etc.)
 // registered programmatically. Each Registry instance is independent, which

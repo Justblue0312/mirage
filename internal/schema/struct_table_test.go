@@ -146,3 +146,50 @@ func TestParseColumnTag_Default(t *testing.T) {
 		t.Errorf("expected 'hello', got %q", col.Default)
 	}
 }
+
+type TestBase struct {
+	ID int64 `db:"pk,type:bigserial"`
+}
+
+type TestUserFav struct {
+	TestBase
+	ID       int64 `db:"name=fav_id,type:bigint,notnull"`
+	UserID   int64 `db:"name=user_id,type:bigint,notnull"`
+	Position int   `db:"name=position,type:int,default=0"`
+}
+
+func TestConvertStructToTable_OverrideEmbeddedField(t *testing.T) {
+	table, err := ConvertStructToTable("test_user_favs", reflect.TypeOf(TestUserFav{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.Name != "test_user_favs" {
+		t.Errorf("expected 'test_user_favs', got %q", table.Name)
+	}
+	// Should have 3 columns: fav_id, user_id, position.
+	// Base.ID should be overridden by UserFav.ID (fav_id).
+	if len(table.Columns) != 3 {
+		colNames := make([]string, len(table.Columns))
+		for i, c := range table.Columns {
+			colNames[i] = c.Name
+		}
+		t.Fatalf("expected 3 columns, got %d: %v", len(table.Columns), colNames)
+	}
+	// Verify no column named "id" exists — it should be overridden.
+	for _, c := range table.Columns {
+		if c.Name == "id" {
+			t.Errorf("embedded Base.ID was not overridden; got column 'id'")
+		}
+	}
+	// Verify fav_id column exists.
+	found := false
+	for _, c := range table.Columns {
+		if c.Name == "fav_id" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected fav_id column from override")
+	}
+}
