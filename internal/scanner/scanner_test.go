@@ -1236,3 +1236,41 @@ var _ = mirage.Register(mirage.Table{StructName: "User", Name: "users"})
 		}
 	}
 }
+
+func TestScan_CompositeConstraintsViaRegister(t *testing.T) {
+	src := `package test
+import mirage "github.com/justblue/mirage"
+type Order struct {
+	ID        int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
+	UserID    int64  ` + "`" + `db:"name=user_id,type=bigint"` + "`" + `
+	ProductID int64  ` + "`" + `db:"name=product_id,type=bigint"` + "`" + `
+	Status    string ` + "`" + `db:"name=status,type=varchar(50)"` + "`" + `
+}
+var _ = mirage.Register(mirage.Table{
+	StructName: "Order",
+	Name:       "orders",
+	Uniques:    []mirage.UniqueConstraint{{Name: "uq_user_product", Columns: []string{"user_id", "product_id"}}},
+	Indexes:    []mirage.Index{{Name: "idx_status", Columns: []string{"status"}}},
+})
+`
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, err := ParseFile(fset, node, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("got %d decls, want 1", len(decls))
+	}
+	uqArgs := decls[0].TableAttrs.AllArgs("uq")
+	if len(uqArgs) != 1 || len(uqArgs[0]) != 2 || uqArgs[0][0] != "user_id" {
+		t.Errorf("uq args = %v, want [[user_id product_id]]", uqArgs)
+	}
+	idxArgs := decls[0].TableAttrs.AllArgs("index")
+	if len(idxArgs) != 1 || len(idxArgs[0]) != 1 || idxArgs[0][0] != "status" {
+		t.Errorf("index args = %v, want [[status]]", idxArgs)
+	}
+}

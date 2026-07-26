@@ -190,6 +190,40 @@ func buildAttrsFromTable(tc *schema.Table) Attrs {
 	if tc.Partitioned != nil {
 		attrs["partitioned"] = AttrValue{Args: []string{tc.Partitioned.Strategy, tc.Partitioned.Column}}
 	}
+	if len(tc.Uniques) > 0 {
+		var groups [][]string
+		for _, uq := range tc.Uniques {
+			groups = append(groups, uq.Columns)
+		}
+		attrs["uq"] = AttrValue{MultiArgs: groups}
+	}
+	if len(tc.Indexes) > 0 {
+		var groups [][]string
+		for _, idx := range tc.Indexes {
+			groups = append(groups, idx.Columns)
+		}
+		attrs["index"] = AttrValue{MultiArgs: groups}
+	}
+	if len(tc.ForeignKeys) > 0 {
+		var groups [][]string
+		for _, fk := range tc.ForeignKeys {
+			for i, fromCol := range fk.FromColumns {
+				toCol := ""
+				if i < len(fk.ToColumns) {
+					toCol = fk.ToColumns[i]
+				}
+				groups = append(groups, []string{fromCol + ":" + fk.ToTable + "." + toCol})
+			}
+		}
+		attrs["fk"] = AttrValue{MultiArgs: groups}
+	}
+	if len(tc.Checks) > 0 {
+		var groups [][]string
+		for _, chk := range tc.Checks {
+			groups = append(groups, []string{chk.Expression})
+		}
+		attrs["check"] = AttrValue{MultiArgs: groups}
+	}
 	return attrs
 }
 
@@ -936,6 +970,14 @@ func parseTableLiteral(cl *ast.CompositeLit) *schema.Table {
 			tc.Type = schema.ParseTableType(extractStringLit(kv.Value))
 		case "Partitioned":
 			tc.Partitioned = parsePartitionLiteral(kv.Value)
+		case "Uniques":
+			tc.Uniques = parseUniqueConstraints(kv.Value)
+		case "Indexes":
+			tc.Indexes = parseIndexConstraints(kv.Value)
+		case "ForeignKeys":
+			tc.ForeignKeys = parseForeignKeyConstraints(kv.Value)
+		case "Checks":
+			tc.Checks = parseCheckConstraints(kv.Value)
 		case "Ignore":
 			tc.Ignore = extractBoolLit(kv.Value)
 		}
@@ -969,6 +1011,164 @@ func parsePartitionLiteral(expr ast.Expr) *schema.Partition {
 		}
 	}
 	return p
+}
+
+func parseUniqueConstraints(expr ast.Expr) []schema.UniqueConstraint {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var result []schema.UniqueConstraint
+	for _, elt := range cl.Elts {
+		cl, ok := elt.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		uq := schema.UniqueConstraint{}
+		for _, kv := range cl.Elts {
+			kv, ok := kv.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			switch key.Name {
+			case "Name":
+				uq.Name = extractStringLit(kv.Value)
+			case "Columns":
+				uq.Columns = parseStringSliceLit(kv.Value)
+			}
+		}
+		result = append(result, uq)
+	}
+	return result
+}
+
+func parseIndexConstraints(expr ast.Expr) []schema.Index {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var result []schema.Index
+	for _, elt := range cl.Elts {
+		cl, ok := elt.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		idx := schema.Index{}
+		for _, kv := range cl.Elts {
+			kv, ok := kv.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			switch key.Name {
+			case "Name":
+				idx.Name = extractStringLit(kv.Value)
+			case "Columns":
+				idx.Columns = parseStringSliceLit(kv.Value)
+			case "Kind":
+				idx.Kind = extractStringLit(kv.Value)
+			case "Sort":
+				idx.Sort = extractStringLit(kv.Value)
+			}
+		}
+		result = append(result, idx)
+	}
+	return result
+}
+
+func parseForeignKeyConstraints(expr ast.Expr) []schema.ForeignKey {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var result []schema.ForeignKey
+	for _, elt := range cl.Elts {
+		cl, ok := elt.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		fk := schema.ForeignKey{}
+		for _, kv := range cl.Elts {
+			kv, ok := kv.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			switch key.Name {
+			case "Name":
+				fk.Name = extractStringLit(kv.Value)
+			case "FromTable":
+				fk.FromTable = extractStringLit(kv.Value)
+			case "FromColumns":
+				fk.FromColumns = parseStringSliceLit(kv.Value)
+			case "ToTable":
+				fk.ToTable = extractStringLit(kv.Value)
+			case "ToColumns":
+				fk.ToColumns = parseStringSliceLit(kv.Value)
+			case "OnDelete":
+				fk.OnDelete = extractStringLit(kv.Value)
+			case "OnUpdate":
+				fk.OnUpdate = extractStringLit(kv.Value)
+			}
+		}
+		result = append(result, fk)
+	}
+	return result
+}
+
+func parseCheckConstraints(expr ast.Expr) []schema.CheckConstraint {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var result []schema.CheckConstraint
+	for _, elt := range cl.Elts {
+		cl, ok := elt.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		chk := schema.CheckConstraint{}
+		for _, kv := range cl.Elts {
+			kv, ok := kv.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			switch key.Name {
+			case "Name":
+				chk.Name = extractStringLit(kv.Value)
+			case "Expression":
+				chk.Expression = extractStringLit(kv.Value)
+			}
+		}
+		result = append(result, chk)
+	}
+	return result
+}
+
+func parseStringSliceLit(expr ast.Expr) []string {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var result []string
+	for _, elt := range cl.Elts {
+		result = append(result, extractStringLit(elt))
+	}
+	return result
 }
 
 func parseFunctionArgumentList(expr ast.Expr) []schema.FunctionArgument {

@@ -1,9 +1,10 @@
 package scanner
 
 type AttrValue struct {
-	Flag  bool
-	Value string
-	Args  []string
+	Flag      bool
+	Value     string
+	Args      []string
+	MultiArgs [][]string
 }
 
 type Attrs map[string]AttrValue
@@ -13,7 +14,7 @@ func (a Attrs) Has(key string) bool {
 	if !ok {
 		return false
 	}
-	return v.Flag || v.Value != "" || len(v.Args) > 0
+	return v.Flag || v.Value != "" || len(v.Args) > 0 || len(v.MultiArgs) > 0
 }
 
 func (a Attrs) String(key, fallback string) string {
@@ -31,11 +32,13 @@ func (a Attrs) Args(key string) []string {
 }
 
 func (a Attrs) AllArgs(key string) [][]string {
-	var result [][]string
 	if v, ok := a[key]; ok {
+		if len(v.MultiArgs) > 0 {
+			return v.MultiArgs
+		}
 		if len(v.Args) > 0 {
-			result = append(result, v.Args)
+			return [][]string{v.Args}
 		}
 	}
-	return result
+	return nil
 }
