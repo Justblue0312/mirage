@@ -117,5 +117,5 @@ func UnmarshalNotification[T any](n *Notification) (T, error) {
 }
 
 func stringToBytes(s string) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s))
+	return unsafe.Slice(unsafe.StringData(s), len(s)) //nolint:gosec // intentional unsafe for zero-copy conversion
 }

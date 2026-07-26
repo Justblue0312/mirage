@@ -698,8 +698,8 @@ func (g *Generator) generateDown() ([]string, error) {
 
 	// Extensions are dropped last: by the time we get here every dependent
 	// object (tables, types, functions) has already been removed.
-	for _, e := range extensionDropStmts {
-		stmts = append(stmts, e)
+	if len(extensionDropStmts) > 0 {
+		stmts = append(stmts, extensionDropStmts...)
 	}
 
 	return stmts, nil

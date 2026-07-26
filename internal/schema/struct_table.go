@@ -159,54 +159,6 @@ func handleTagFlag(flag string, col *Column) {
 	}
 }
 
-func parseRefTag(value string) (tableName, columnName, onDelete, onUpdate string) {
-	value = strings.TrimSuffix(value, ")")
-	parenIdx := strings.IndexByte(value, '(')
-	if parenIdx == -1 {
-		return value, "", "", ""
-	}
-
-	tableName = value[:parenIdx]
-	rest := strings.TrimSpace(value[parenIdx+1:])
-
-	tokens := strings.Fields(rest)
-	if len(tokens) == 0 {
-		return
-	}
-
-	columnName = tokens[0]
-
-	i := 1
-	for i < len(tokens) {
-		if strings.ToUpper(tokens[i]) == "ON" && i+2 < len(tokens) {
-			direction := strings.ToUpper(tokens[i+1])
-			if direction == "DELETE" || direction == "UPDATE" {
-				j := i + 2
-				action := strings.ToUpper(tokens[j])
-				j++
-				for j < len(tokens) {
-					next := strings.ToUpper(tokens[j])
-					if next == "ON" || next == "DEFERRABLE" || next == "NOT" {
-						break
-					}
-					action += " " + next
-					j++
-				}
-				if direction == "DELETE" {
-					onDelete = action
-				} else {
-					onUpdate = action
-				}
-				i = j
-				continue
-			}
-		}
-		i++
-	}
-
-	return
-}
-
 func splitTagParts(raw string) []string {
 	var parts []string
 	var current strings.Builder

@@ -63,7 +63,7 @@ func WithRegistry(r *Registry) RepositoryOption {
 func NewRepository[T any](db *DB, opts ...RepositoryOption) *Repository[T] {
 	var zero T
 	typ := reflect.TypeOf(zero)
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Ptr { //nolint:govet // reflect.Ptr is the canonical constant
 		typ = typ.Elem()
 	}
 

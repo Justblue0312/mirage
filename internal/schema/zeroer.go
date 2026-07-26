@@ -36,8 +36,8 @@ func isZero(v interface{}) bool {
 		if z, ok := v.(Zeroer); ok {
 			return z.IsZero()
 		}
-		if _, ok := v.(net.IP); ok {
-			return len(v.(net.IP)) == 0
+		if ip, ok := v.(net.IP); ok {
+			return len(ip) == 0
 		}
 		if b, ok := v.(*big.Int); ok {
 			return b.Sign() == 0

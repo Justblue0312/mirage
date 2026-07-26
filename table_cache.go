@@ -30,7 +30,7 @@ func cachedTable(typ reflect.Type, reg *Registry) (*schemapkg.Table, error) {
 	typ = schemapkg.IndirectType(typ)
 	key := cacheKey{typ: typ, registry: reg}
 	if cached, ok := tableCache.Load(key); ok {
-		return cached.(*schemapkg.Table), nil
+		return cached.(*schemapkg.Table), nil //nolint:errcheck // type guaranteed by cache store
 	}
 
 	tableName := resolveTableName(typ, reg)
@@ -40,7 +40,7 @@ func cachedTable(typ reflect.Type, reg *Registry) (*schemapkg.Table, error) {
 		return nil, err
 	}
 	actual, _ := tableCache.LoadOrStore(key, td)
-	return actual.(*schemapkg.Table), nil
+	return actual.(*schemapkg.Table), nil //nolint:errcheck // type guaranteed by cache store
 }
 
 func resolveTableName(typ reflect.Type, reg *Registry) string {

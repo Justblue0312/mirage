@@ -204,7 +204,7 @@ func generatePipeline(ctx context.Context, opts generateOptions, pool *pgxpool.P
 	res.File = mf
 
 	if pool != nil {
-		snapshotData, err := json.Marshal(pkg)
+		snapshotData, err := json.Marshal(pkg) //nolint:staticcheck // SA1026: PasswordHandler.Encrypt is func, marshals as null
 		if err != nil {
 			return nil, fmt.Errorf("marshaling snapshot: %w", err)
 		}
