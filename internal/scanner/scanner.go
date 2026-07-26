@@ -408,6 +408,13 @@ func resolveColumn(f RawField, i int, isEmbedded bool, overrides map[string]bool
 		}
 	}
 
+	// Auto-infer SQL type from Go type when no explicit type= tag is set
+	if col.SQLType == "" {
+		if inferred := goTypeToSQLType(f.GoType); inferred != "" {
+			col.SQLType = inferred
+		}
+	}
+
 	if col.SQLType == "" {
 		return nil, fmt.Errorf("field %q in table %q missing type and could not be resolved as enum", f.GoName, sqlName)
 	}
