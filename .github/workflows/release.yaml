@@ -19,11 +19,11 @@ jobs:
         with:
           fetch-depth: 0   # GoReleaser needs full history to build the changelog
 
-      - uses: actions/setup-go@v5
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
         with:
-          go-version: "1.26.x"
-          check-latest: true
-          cache: true
+          version: v1.60.0
+          args: --timeout=5m
 
       # Reuse the exact same gates as CI before shipping a release build,
       # so a release can never ship code that failed lint/tests.

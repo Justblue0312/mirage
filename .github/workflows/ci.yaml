@@ -50,9 +50,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64.9
+          version: v1.60.0
           args: --timeout=5m
-          cache: true
 
   # ---------------------------------------------------------------------
   # Build: verify the module and the CLI binary compile for every
