@@ -47,8 +47,8 @@ type PlainFav struct {
 
 func init() {
 	mirage.Register(mirage.Table{
-		StructName: "UserFav",
-		Name:       "user_favorites",
+		StructName:  "UserFav",
+		Name:        "user_favorites",
 		Description: "User favorite items with position ordering",
 		Uniques: []mirage.UniqueConstraint{
 			{Name: "uq_user_fav_user_position", Columns: []string{"user_id", "position"}},
