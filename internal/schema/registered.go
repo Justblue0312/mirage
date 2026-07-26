@@ -242,5 +242,3 @@ func (e *Extension) HashBody() string {
 	h.Write([]byte(e.Version))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
-
-
