@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -130,12 +131,7 @@ func (td *Table) IsType(types ...TableType) bool {
 	if len(types) == 0 {
 		return true
 	}
-	for _, t := range types {
-		if td.Type == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(types, td.Type)
 }
 
 func (td *Table) FindPrimaryKey() (*Column, bool) {

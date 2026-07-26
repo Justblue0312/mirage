@@ -36,7 +36,8 @@ func BuildInsertQuery(td *Table, structValue reflect.Value, idPtr any, forceOnCo
 	b.WriteString(")")
 
 	if upsert && forceOnConflictExpr != "" {
-		b.WriteString(" " + forceOnConflictExpr)
+		b.WriteString(" ")
+		b.WriteString(forceOnConflictExpr)
 	}
 
 	if len(returningColumns) > 0 {
@@ -329,10 +330,12 @@ func BuildAlterTableForeignKeysQueries(td *Table) []string {
 			Quote(col.Name), Quote(col.ReferenceTableName), Quote(col.ReferenceColumnName))
 
 		if col.ReferenceOnDelete != "" {
-			b.WriteString(" ON DELETE " + col.ReferenceOnDelete)
+			b.WriteString(" ON DELETE ")
+			b.WriteString(col.ReferenceOnDelete)
 		}
 		if col.ReferenceOnUpdate != "" {
-			b.WriteString(" ON UPDATE " + col.ReferenceOnUpdate)
+			b.WriteString(" ON UPDATE ")
+			b.WriteString(col.ReferenceOnUpdate)
 		}
 		if col.DeferrableReference {
 			b.WriteString(" DEFERRABLE")

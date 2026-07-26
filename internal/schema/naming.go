@@ -14,9 +14,11 @@ func PKName(table string) string {
 // FKName generates a foreign key constraint name.
 func FKName(fromTable string, fromCols []string) string {
 	var s strings.Builder
-	s.WriteString("fk_" + fromTable)
+	s.WriteString("fk_")
+	s.WriteString(fromTable)
 	for _, c := range fromCols {
-		s.WriteString("_" + c)
+		s.WriteString("_")
+		s.WriteString(c)
 	}
 	return Truncate(s.String())
 }
@@ -24,9 +26,11 @@ func FKName(fromTable string, fromCols []string) string {
 // UQName generates a unique constraint name.
 func UQName(table string, cols []string) string {
 	var s strings.Builder
-	s.WriteString("uq_" + table)
+	s.WriteString("uq_")
+	s.WriteString(table)
 	for _, c := range cols {
-		s.WriteString("_" + c)
+		s.WriteString("_")
+		s.WriteString(c)
 	}
 	return Truncate(s.String())
 }
