@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 // FromLiveDatabase builds a schema.Package by reading the live database's
@@ -751,7 +751,12 @@ func introspectPartitions(ctx context.Context, pool *pgxpool.Pool, searchPath st
 			pkg.Tables[idx].Partitioned = &schema.Partition{
 				Strategy: strategy,
 				Columns:  cols,
-				Column:   func() string { if len(cols) > 0 { return cols[0] }; return "" }(),
+				Column: func() string {
+					if len(cols) > 0 {
+						return cols[0]
+					}
+					return ""
+				}(),
 			}
 		}
 	}

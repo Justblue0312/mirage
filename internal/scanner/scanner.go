@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 type Scanner struct {

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justblue/mirage/internal/config"
+	"github.com/Justblue0312/mirage/internal/config"
 )
 
 func setTestConfig(t *testing.T, cfg *config.Config) {

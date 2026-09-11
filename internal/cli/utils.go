@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/justblue/mirage/internal/dialect/postgres"
-	"github.com/justblue/mirage/internal/generator"
-	"github.com/justblue/mirage/internal/validate"
+	"github.com/Justblue0312/mirage/internal/dialect/postgres"
+	"github.com/Justblue0312/mirage/internal/generator"
+	"github.com/Justblue0312/mirage/internal/validate"
 )
 
 func formatMigrationFile(mf *generator.MigrationFile) string {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Justblue0312/mirage/internal/diff"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/justblue/mirage/internal/diff"
 )
 
 func TestGeneratePipeline_FirstRunProducesFile(t *testing.T) {
@@ -204,7 +204,7 @@ func TestCmdGenerate_InvalidModelFailsValidation(t *testing.T) {
 // persisted --db snapshot rather than relying on a fresh scan.
 const idempotentModelV1 = `package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Product",
@@ -219,7 +219,7 @@ type Product struct {
 
 const idempotentModelV2 = `package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Product",

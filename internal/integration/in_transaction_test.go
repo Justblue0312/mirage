@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 // TestInTransaction_PropagatesCommitError is the regression test for the

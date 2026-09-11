@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	mirage "github.com/Justblue0312/mirage"
 	"github.com/jackc/pgx/v5"
-	mirage "github.com/justblue/mirage"
 )
 
 // These tests exist specifically to catch the class of bug fixed in this

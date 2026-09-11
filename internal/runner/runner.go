@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Justblue0312/mirage/internal/checksum"
+	"github.com/Justblue0312/mirage/internal/dialect"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/justblue/mirage/internal/checksum"
-	"github.com/justblue/mirage/internal/dialect"
 )
 
 const (

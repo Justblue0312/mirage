@@ -3,7 +3,7 @@ package auth
 import (
 	"time"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 type User struct {
@@ -13,8 +13,8 @@ type User struct {
 	Email    string `db:"name=email,type=varchar(255),notnull,unique,comment=Primary email address"`
 	Password string `db:"name=password,type=varchar(255),notnull,password,comment=bcrypt hashed password"`
 
-	Role     UserRole `db:"name=role,type=user_role,notnull,default='guest'"`
-	Status   string   `db:"name=status,type=varchar(20),notnull,default='active',check=status IN ('active','suspended','deleted')"`
+	Role   UserRole `db:"name=role,type=user_role,notnull,default='guest'"`
+	Status string   `db:"name=status,type=varchar(20),notnull,default='active',check=status IN ('active','suspended','deleted')"`
 
 	FirstName string `db:"name=first_name,type=varchar(100),null"`
 	LastName  string `db:"name=last_name,type=varchar(100),null"`

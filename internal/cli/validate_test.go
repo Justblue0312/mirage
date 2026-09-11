@@ -16,7 +16,7 @@ func writeModelFile(t *testing.T, dir, filename, content string) {
 
 const validUserModel = `package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "User",
@@ -41,7 +41,7 @@ type User struct {
 // does not currently cover this specific, generate-time-only check.
 const warnOnlyModel = `package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Order",
@@ -59,7 +59,7 @@ type Order struct {
 // prints the failure.
 const duplicateTableModel = `package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Account",

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 // pgCatalogToSQLType maps PostgreSQL catalog names (from udt_name /

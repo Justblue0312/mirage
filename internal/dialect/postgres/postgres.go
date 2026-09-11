@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/justblue/mirage/internal/dialect"
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/dialect"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 // Compile-time assertions that Postgres satisfies every dialect interface

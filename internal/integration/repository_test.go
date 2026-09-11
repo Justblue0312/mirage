@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 // testMirageDSN resolves the same connection string setupTestDB uses, and

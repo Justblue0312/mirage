@@ -6,8 +6,8 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/justblue/mirage/internal/scanner"
-	"github.com/justblue/mirage/internal/validate"
+	"github.com/Justblue0312/mirage/internal/scanner"
+	"github.com/Justblue0312/mirage/internal/validate"
 )
 
 func cmdValidate() *cli.Command {

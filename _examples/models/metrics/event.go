@@ -3,7 +3,7 @@ package metrics
 import (
 	"time"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 type Event struct {
@@ -46,9 +46,9 @@ func init() {
 }
 
 type Event2024Q1 struct {
-	ID int64 `db:"pk,identity,type=bigserial"`
-	UserID    *int64 `db:"name=user_id,type=bigint,null,ref=users.id ON DELETE SET NULL"`
-	SessionID string `db:"name=session_id,type=varchar(255),notnull"`
-	EventType string `db:"name=event_type,type=varchar(100),notnull"`
+	ID        int64     `db:"pk,identity,type=bigserial"`
+	UserID    *int64    `db:"name=user_id,type=bigint,null,ref=users.id ON DELETE SET NULL"`
+	SessionID string    `db:"name=session_id,type=varchar(255),notnull"`
+	EventType string    `db:"name=event_type,type=varchar(100),notnull"`
 	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW(),pk"`
 }

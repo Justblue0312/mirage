@@ -28,7 +28,9 @@ func TestJSONColumns_NotFlattened(t *testing.T) {
 	if len(td.Columns) != 7 {
 		t.Fatalf("expected 7 columns, got %d: %v", len(td.Columns), func() []string {
 			var n []string
-			for _, c := range td.Columns { n = append(n, c.Name) }
+			for _, c := range td.Columns {
+				n = append(n, c.Name)
+			}
 			return n
 		}())
 	}
@@ -53,7 +55,7 @@ func TestJSONMarshalExtract(t *testing.T) {
 	val := reflect.ValueOf(BarJSON{
 		ID: 1, Foo: FooJSON{A: "hello", B: 42},
 		Items: []FooJSON{{A: "x", B: 1}},
-		M: map[string]any{"k": float64(1)},
+		M:     map[string]any{"k": float64(1)},
 	})
 	_, args, err := BuildInsertQuery(td, val, nil, "", false)
 	if err != nil {

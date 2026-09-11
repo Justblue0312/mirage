@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 type DeclKind int

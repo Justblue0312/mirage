@@ -1,6 +1,6 @@
 package dialect
 
-import "github.com/justblue/mirage/internal/schema"
+import "github.com/Justblue0312/mirage/internal/schema"
 
 // Capabilities reports which optional SQL features a dialect supports. These
 // flags let feature-agnostic code (the generator, runner) branch on behavior

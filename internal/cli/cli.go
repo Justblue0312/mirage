@@ -6,7 +6,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/justblue/mirage/internal/config"
+	"github.com/Justblue0312/mirage/internal/config"
 )
 
 // Version is set via ldflags at build time.

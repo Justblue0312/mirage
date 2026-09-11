@@ -1,6 +1,6 @@
 package auth
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 // UUIDExtension provides the uuid_generate_v4() function used for primary keys.
 var _ = mirage.Register(mirage.Extension{

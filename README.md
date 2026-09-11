@@ -16,7 +16,7 @@ Mirage has two components:
 ### As a CLI Tool
 
 ```bash
-go install github.com/justblue/mirage/cmd/mirage@latest
+go install github.com/Justblue0312/mirage/cmd/mirage@latest
 ```
 
 Initialize mirage in your project:
@@ -30,7 +30,7 @@ Define your models using Go structs with `db` struct tags, and register the tabl
 ```go
 package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 func init() {
     mirage.Register(mirage.Table{StructName: "User", Name: "users"})
@@ -56,7 +56,7 @@ mirage migrate --db "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ### As a Go Library
 
 ```bash
-go get github.com/justblue/mirage
+go get github.com/Justblue0312/mirage
 ```
 
 ```go
@@ -67,7 +67,7 @@ import (
     "fmt"
     "log"
 
-    mirage "github.com/justblue/mirage"
+    mirage "github.com/Justblue0312/mirage"
 )
 
 func init() {
@@ -297,7 +297,7 @@ Functions, views, materialized views, triggers, procedures, grants, and policies
 ```go
 package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 // Function — CREATE FUNCTION
 var _ = mirage.Register(mirage.Function{

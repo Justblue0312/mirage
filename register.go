@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	schemapkg "github.com/justblue/mirage/internal/schema"
+	schemapkg "github.com/Justblue0312/mirage/internal/schema"
 )
 
 type Function = schemapkg.Function

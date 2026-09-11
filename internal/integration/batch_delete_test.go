@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 // snowflakeID is a custom defined type over int64. This is the exact case that

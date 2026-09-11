@@ -3,7 +3,7 @@ package content
 import (
 	"time"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 type PostStatus string

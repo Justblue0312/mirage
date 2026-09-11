@@ -3,7 +3,7 @@ package validate
 import (
 	"strings"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 type ErrorCode string

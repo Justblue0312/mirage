@@ -14,11 +14,11 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/justblue/mirage/internal/dialect/postgres"
-	"github.com/justblue/mirage/internal/diff"
-	"github.com/justblue/mirage/internal/generator"
-	"github.com/justblue/mirage/internal/scanner"
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/dialect/postgres"
+	"github.com/Justblue0312/mirage/internal/diff"
+	"github.com/Justblue0312/mirage/internal/generator"
+	"github.com/Justblue0312/mirage/internal/scanner"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 const (

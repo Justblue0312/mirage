@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/justblue/mirage/internal/cli"
+	"github.com/Justblue0312/mirage/internal/cli"
 )
 
 func main() {

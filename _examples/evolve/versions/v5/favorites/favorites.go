@@ -3,7 +3,7 @@ package favorites
 import (
 	"time"
 
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 
 // Base provides common fields for all favorites.

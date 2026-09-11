@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 func fieldNames(fields []RawField) []string {
@@ -116,7 +116,7 @@ func TestGetStructTag(t *testing.T) {
 func TestParseFile_SingleStruct(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "User",
@@ -185,7 +185,7 @@ type User struct {
 func TestParseFile_Enum(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 type Status string
 const (
@@ -254,7 +254,7 @@ func TestParseFile_Embedded(t *testing.T) {
 
 import (
 	"time"
-	"github.com/justblue/mirage"
+	"github.com/Justblue0312/mirage"
 )
 
 type Timestamps struct {
@@ -297,7 +297,7 @@ type User struct {
 func TestParseFile_PKArgs(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Foo",
@@ -329,7 +329,7 @@ type Foo struct {
 func TestParseFile_CheckConstraint(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Foo",
@@ -561,7 +561,7 @@ func TestSplitTagArgs_QuoteAware(t *testing.T) {
 func TestParseFile_RegisterFunction(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Function{
 	Name: "update_timestamp",
@@ -618,7 +618,7 @@ var _ = mirage.Register(mirage.Function{
 func TestParseFile_RegisterView(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.View{
 	Name:  "active_users",
@@ -656,7 +656,7 @@ var _ = mirage.Register(mirage.View{
 func TestParseFile_RegisterMatView(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.MaterializedView{
 	Name:  "user_stats",
@@ -694,7 +694,7 @@ var _ = mirage.Register(mirage.MaterializedView{
 func TestParseFile_RegisterTrigger(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Trigger{
 	Name:     "trg_update",
@@ -744,7 +744,7 @@ var _ = mirage.Register(mirage.Trigger{
 func TestParseFile_RegisterProcedure(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Procedure{
 	Name:     "refresh_stats",
@@ -786,7 +786,7 @@ var _ = mirage.Register(mirage.Procedure{
 func TestParseFile_RegisterGrant(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Grant{
 	ObjectType: "table",
@@ -832,7 +832,7 @@ var _ = mirage.Register(mirage.Grant{
 func TestParseFile_RegisterPolicy(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Policy{
 	Name:    "user_isolation",
@@ -878,7 +878,7 @@ var _ = mirage.Register(mirage.Policy{
 func TestParseFile_RegisterInInit(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 func init() {
 	mirage.Register(mirage.View{
@@ -918,7 +918,7 @@ func init() {
 func TestParseFile_RegisterExtension(t *testing.T) {
 	src := `package test
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Extension{
 	Name:        "uuid-ossp",
@@ -965,7 +965,7 @@ var _ = mirage.Register(mirage.Extension{
 func TestParseFile_Table_InInit(t *testing.T) {
 	src := `package test
 
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 
 type User struct {
 	ID   int64  ` + "`" + `db:"pk,type:bigserial"` + "`" + `
@@ -1012,7 +1012,7 @@ func init() {
 func TestParseFile_Table_AllAttributes(t *testing.T) {
 	src := `package test
 
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 
 type Widget struct {
 	ID int64 ` + "`" + `db:"pk,type:bigserial"` + "`" + `
@@ -1105,7 +1105,7 @@ type Orphan struct {
 func TestParseFile_Table_Ignore(t *testing.T) {
 	src := `package test
 
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 
 type Secret struct {
 	ID int64 ` + "`" + `db:"pk,type:bigserial"` + "`" + `
@@ -1150,7 +1150,7 @@ func TestScan_Table_Pipeline(t *testing.T) {
 
 	src := `package models
 
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 
 type User struct {
 	ID    int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
@@ -1220,7 +1220,7 @@ func TestScan_Deterministic(t *testing.T) {
 
 	src := `package fixture
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{StructName: "Alpha", Name: "alpha"})
 var _ = mirage.Register(mirage.Table{StructName: "Beta", Name: "beta"})
@@ -1279,7 +1279,7 @@ func TestScan_ColumnTypeChangeUsing(t *testing.T) {
 
 	src := `package fixture
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{StructName: "Widget", Name: "widgets"})
 
@@ -1318,7 +1318,7 @@ type Widget struct {
 
 func TestResolveColumn_AutoInferType(t *testing.T) {
 	src := `package test
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 type User struct {
 	ID    int64   ` + "`" + `db:"pk"` + "`" + `
 	Name  string  ` + "`" + `db:"name=name"` + "`" + `
@@ -1354,7 +1354,7 @@ var _ = mirage.Register(mirage.Table{StructName: "User", Name: "users"})
 
 func TestScan_CompositeConstraintsViaRegister(t *testing.T) {
 	src := `package test
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 type Order struct {
 	ID        int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 	UserID    int64  ` + "`" + `db:"name=user_id,type=bigint"` + "`" + `
@@ -1392,7 +1392,7 @@ var _ = mirage.Register(mirage.Table{
 
 func TestExtractRegisteredObject_Enum(t *testing.T) {
 	src := `package test
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 var _ = mirage.Register(mirage.Enum{
 	StructName: "UserRole",
 	Name:       "user_role",
@@ -1433,7 +1433,7 @@ func TestScan_EmbeddedStructEndToEnd(t *testing.T) {
 	src := `package test
 import (
 	"time"
-	mirage "github.com/justblue/mirage"
+	mirage "github.com/Justblue0312/mirage"
 )
 type Timestamps struct {
 	CreatedAt time.Time ` + "`" + `db:"name=created_at,type=timestamptz,notnull"` + "`" + `
@@ -1478,7 +1478,7 @@ var _ = mirage.Register(mirage.Table{StructName: "User", Name: "users"})
 
 func TestScan_SortOrder(t *testing.T) {
 	src := `package test
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 type Item struct {
 	Z string ` + "`" + `db:"name=z,type=text,sort_order=40"` + "`" + `
 	A string ` + "`" + `db:"name=a,type=text,sort_order=10"` + "`" + `
@@ -1512,7 +1512,7 @@ var _ = mirage.Register(mirage.Table{StructName: "Item", Name: "items"})
 
 func TestScan_CompositeConstraintsEndToEnd(t *testing.T) {
 	src := `package test
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 type Order struct {
 	ID        int64  ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 	UserID    int64  ` + "`" + `db:"name=user_id,type=bigint"` + "`" + `
@@ -1564,7 +1564,7 @@ var _ = mirage.Register(mirage.Table{
 
 func TestScan_OverrideEmbeddedField(t *testing.T) {
 	src := `package test
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 type Base struct {
 	ID int64 ` + "`" + `db:"pk,type=bigserial"` + "`" + `
 }

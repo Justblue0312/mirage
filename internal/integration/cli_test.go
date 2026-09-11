@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	cli "github.com/Justblue0312/mirage/internal/cli"
 	"github.com/jackc/pgx/v5/pgxpool"
-	cli "github.com/justblue/mirage/internal/cli"
 )
 
 const cliTestTableModel = `package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 var _ = mirage.Register(mirage.Table{
 	StructName: "Widget",

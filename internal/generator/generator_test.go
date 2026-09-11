@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justblue/mirage/internal/dialect/postgres"
-	"github.com/justblue/mirage/internal/diff"
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/dialect/postgres"
+	"github.com/Justblue0312/mirage/internal/diff"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 func helperNewPkg(tables []schema.Table, enums []schema.Enum) *schema.Package {

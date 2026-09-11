@@ -1,4 +1,4 @@
-module github.com/justblue/mirage
+module github.com/Justblue0312/mirage
 
 go 1.26.2
 

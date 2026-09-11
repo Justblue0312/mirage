@@ -11,14 +11,14 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/Justblue0312/mirage/internal/dialect/postgres"
+	"github.com/Justblue0312/mirage/internal/diff"
+	"github.com/Justblue0312/mirage/internal/generator"
+	"github.com/Justblue0312/mirage/internal/runner"
+	"github.com/Justblue0312/mirage/internal/scanner"
+	"github.com/Justblue0312/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/validate"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/justblue/mirage/internal/dialect/postgres"
-	"github.com/justblue/mirage/internal/diff"
-	"github.com/justblue/mirage/internal/generator"
-	"github.com/justblue/mirage/internal/runner"
-	"github.com/justblue/mirage/internal/scanner"
-	"github.com/justblue/mirage/internal/schema"
-	"github.com/justblue/mirage/internal/validate"
 )
 
 // generateOptions holds the already-parsed inputs for the generate pipeline.

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	schemapkg "github.com/justblue/mirage/internal/schema"
+	schemapkg "github.com/Justblue0312/mirage/internal/schema"
 )
 
 // Repository provides type-safe CRUD operations for a single table mapped

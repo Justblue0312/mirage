@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"sync"
 
-	schemapkg "github.com/justblue/mirage/internal/schema"
+	schemapkg "github.com/Justblue0312/mirage/internal/schema"
 )
 
 // cacheKey pairs a type with its registry so different registries get

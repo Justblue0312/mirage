@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 func sortedKeys[V any](m map[string]V) []string {

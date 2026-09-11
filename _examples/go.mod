@@ -1,10 +1,10 @@
-module github.com/justblue/mirage/_examples
+module github.com/Justblue0312/mirage/_examples
 
 go 1.26.2
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/justblue/mirage v0.0.0
+	github.com/Justblue0312/mirage v0.0.0
 )
 
 require (
@@ -17,4 +17,4 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 )
 
-replace github.com/justblue/mirage => ../
+replace github.com/Justblue0312/mirage => ../

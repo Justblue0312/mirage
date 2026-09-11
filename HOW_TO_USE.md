@@ -6,10 +6,10 @@ A practical guide to using Mirage as a Go library and CLI tool.
 
 ```bash
 # Go library
-go get github.com/justblue/mirage
+go get github.com/Justblue0312/mirage
 
 # CLI tool
-go install github.com/justblue/mirage/cmd/mirage@latest
+go install github.com/Justblue0312/mirage/cmd/mirage@latest
 ```
 
 ## Defining Models
@@ -23,7 +23,7 @@ package models
 
 import (
     "time"
-    "github.com/justblue/mirage"
+    "github.com/Justblue0312/mirage"
 )
 
 func init() {
@@ -194,7 +194,7 @@ The scanner detects `var _ = mirage.Register(...)` and `func init() { mirage.Reg
 ```go
 package models
 
-import "github.com/justblue/mirage"
+import "github.com/Justblue0312/mirage"
 
 // A PL/pgSQL function that auto-updates the updated_at column.
 var _ = mirage.Register(mirage.Function{
@@ -395,7 +395,7 @@ Creates an empty migration file with `-- +migrate Up` / `-- +migrate Down` marke
 ### Connecting
 
 ```go
-import mirage "github.com/justblue/mirage"
+import mirage "github.com/Justblue0312/mirage"
 
 ctx := context.Background()
 

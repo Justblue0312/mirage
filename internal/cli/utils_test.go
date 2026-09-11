@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justblue/mirage/internal/generator"
-	"github.com/justblue/mirage/internal/runner"
-	"github.com/justblue/mirage/internal/validate"
+	"github.com/Justblue0312/mirage/internal/generator"
+	"github.com/Justblue0312/mirage/internal/runner"
+	"github.com/Justblue0312/mirage/internal/validate"
 )
 
 func writeMigrationFile(t *testing.T, dir, name string) {

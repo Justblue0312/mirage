@@ -35,7 +35,7 @@ func MarshalJSONValue(v reflect.Value) (any, error) {
 		if v.Kind() == reflect.Slice && v.IsNil() {
 			return nil, nil
 		}
-		return []byte(v.Bytes()), nil
+		return v.Bytes(), nil
 	}
 	b, err := json.Marshal(v.Interface())
 	if err != nil {

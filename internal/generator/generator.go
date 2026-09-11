@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/justblue/mirage/internal/checksum"
-	"github.com/justblue/mirage/internal/dialect"
-	"github.com/justblue/mirage/internal/diff"
-	"github.com/justblue/mirage/internal/graph"
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/checksum"
+	"github.com/Justblue0312/mirage/internal/dialect"
+	"github.com/Justblue0312/mirage/internal/diff"
+	"github.com/Justblue0312/mirage/internal/graph"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 type Generator struct {

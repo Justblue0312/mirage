@@ -3,7 +3,7 @@ package validate
 import (
 	"testing"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 func TestValidate_CleanPackage(t *testing.T) {

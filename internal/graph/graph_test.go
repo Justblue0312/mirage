@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justblue/mirage/internal/schema"
+	"github.com/Justblue0312/mirage/internal/schema"
 )
 
 func TestBuildAndSort_LinearDependency(t *testing.T) {

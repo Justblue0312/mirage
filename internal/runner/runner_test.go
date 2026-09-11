@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/justblue/mirage/internal/dialect/postgres"
+	"github.com/Justblue0312/mirage/internal/dialect/postgres"
 )
 
 func testDSN(t *testing.T) string {

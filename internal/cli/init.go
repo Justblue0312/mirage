@@ -8,8 +8,8 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/Justblue0312/mirage/internal/runner"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/justblue/mirage/internal/runner"
 )
 
 func cmdInit() *cli.Command {
