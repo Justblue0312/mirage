@@ -1,0 +1,54 @@
+package metrics
+
+import (
+	"time"
+
+	mirage "github.com/justblue/mirage"
+)
+
+type Event struct {
+	ID int64 `db:"pk,identity,type=bigserial"`
+
+	UserID    *int64 `db:"name=user_id,type=bigint,null,ref=users.id ON DELETE SET NULL,comment=nil for anonymous events"`
+	SessionID string `db:"name=session_id,type=varchar(255),notnull,comment=Browser session identifier"`
+	EventType string `db:"name=event_type,type=varchar(100),notnull,comment=e.g. page_view, click, scroll, purchase"`
+
+	ResourceType string `db:"name=resource_type,type=varchar(50),null,comment=e.g. post, product, comment"`
+	ResourceID   *int64 `db:"name=resource_id,type=bigint,null"`
+
+	Path      string `db:"name=path,type=varchar(1024),notnull,comment=URL path"`
+	Referrer  string `db:"name=referrer,type=varchar(1024),null"`
+	UserAgent string `db:"name=user_agent,type=text,null,comment=Full user agent string"`
+	IPAddress string `db:"name=ip_address,type=inet,null,comment=Client IP for geolocation"`
+
+	MetadataJSON string `db:"name=metadata_json,type=jsonb,null,comment=Flexible event-specific data"`
+
+	DurationMs *int `db:"name=duration_ms,type=int,null,comment=Event duration in milliseconds"`
+
+	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW(),pk"`
+}
+
+func init() {
+	mirage.Register(mirage.Table{
+		StructName:  "Event",
+		Name:        "events",
+		Description: "User activity events for analytics",
+		Partitioned: &mirage.Partition{Strategy: "RANGE", Columns: []string{"created_at"}},
+	})
+	mirage.Register(mirage.Table{
+		StructName: "Event2024Q1",
+		Name:       "events_2024_q1",
+		PartitionOf: &mirage.PartitionBound{
+			ParentTable: "events",
+			Bounds:      "FOR VALUES FROM ('2024-01-01') TO ('2024-04-01')",
+		},
+	})
+}
+
+type Event2024Q1 struct {
+	ID int64 `db:"pk,identity,type=bigserial"`
+	UserID    *int64 `db:"name=user_id,type=bigint,null,ref=users.id ON DELETE SET NULL"`
+	SessionID string `db:"name=session_id,type=varchar(255),notnull"`
+	EventType string `db:"name=event_type,type=varchar(100),notnull"`
+	CreatedAt time.Time `db:"name=created_at,type=timestamptz,notnull,default=NOW(),pk"`
+}
