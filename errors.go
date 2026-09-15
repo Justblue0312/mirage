@@ -51,74 +51,79 @@ func IsErrNoRows(err error) bool {
 	return errors.Is(err, ErrNoRows)
 }
 
-// IsErrDuplicate reports whether the return error from `Insert` method
-// was caused because of a violation of a unique constraint (it's not typed error at the underline driver).
-// It returns the constraint key if it's true.
+// PostgreSQL SQLSTATE codes used for structured error classification below.
+// Using codes (rather than parsing the human-readable Message) is required
+// because Message is subject to server-side localization (lc_messages) and
+// wording changes across PostgreSQL versions, and because db.go wraps every
+// error with a "query: "/"exec: "/"transaction: ..." prefix -- any check
+// that relied on err.Error() having a specific prefix (e.g. "ERROR: ") broke
+// the instant the error passed through DB.Exec/DB.Query. errors.As unwraps
+// through any number of %w layers, so these helpers work regardless of how
+// many times the error has been wrapped.
+const (
+	sqlStateUniqueViolation           = "23505"
+	sqlStateForeignKeyViolation       = "23503"
+	sqlStateInvalidTextRepresentation = "22P02" // invalid input syntax for type X
+	sqlStateSyntaxErrorOrAccessRule   = "42601" // covers tsquery syntax errors, etc.
+	sqlStateUndefinedColumn           = "42703"
+)
+
+// IsErrDuplicate reports whether err was caused by a violation of a unique
+// constraint (SQLSTATE 23505). It returns the offending constraint name if
+// so. Unlike a substring match on the error message, this survives error
+// wrapping (fmt.Errorf("...: %w", err)) and is unaffected by server locale.
 func IsErrDuplicate(err error) (string, bool) {
-	if err != nil {
-		errText := err.Error()
-		if strings.Contains(errText, "ERROR: duplicate key value violates unique constraint") {
-			if startIdx := strings.IndexByte(errText, '"'); startIdx > 0 && startIdx+1 < len(errText) {
-				errText = errText[startIdx+1:]
-				if endIdx := strings.IndexByte(errText, '"'); endIdx > 0 && endIdx < len(errText) {
-					return errText[:endIdx], true
-				}
-			}
-		}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == sqlStateUniqueViolation {
+		return pgErr.ConstraintName, true
 	}
 
 	return "", false
 }
 
 // IsErrForeignKey reports whether an insert or update command failed due
-// to an invalid foreign key: a foreign key is missing or its source was not found.
-// E.g. ERROR: insert or update on table "food_user_friendly_units" violates foreign key constraint "fk_food" (SQLSTATE 23503)
+// to an invalid foreign key (SQLSTATE 23503): a foreign key is missing or
+// its referenced row was not found. It returns the offending constraint
+// name if so.
 func IsErrForeignKey(err error) (string, bool) {
-	if err != nil {
-		errText := err.Error()
-		if strings.Contains(errText, "violates foreign key constraint") {
-			if startIdx := strings.IndexByte(errText, '"'); startIdx > 0 && startIdx+1 < len(errText) {
-				errText = errText[startIdx+1:]
-				if endIdx := strings.IndexByte(errText, '"'); endIdx > 0 && endIdx < len(errText) {
-					return errText[:endIdx], true
-				}
-			}
-		}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == sqlStateForeignKeyViolation {
+		return pgErr.ConstraintName, true
 	}
 	return "", false
 }
 
-// IsErrInputSyntax reports whether the return error from `Insert` method
-// was caused because of invalid input syntax for a specific postgres column type.
+// IsErrInputSyntax reports whether err was caused by invalid input syntax
+// for a PostgreSQL column type (SQLSTATE 22P02), including tsquery syntax
+// errors. It returns a short description of the failure if so.
 func IsErrInputSyntax(err error) (string, bool) {
-	if err != nil {
-		errText := err.Error()
-		if strings.HasPrefix(errText, "ERROR: ") {
-			if strings.Contains(errText, "ERROR: invalid input syntax for type") || strings.Contains(errText, "ERROR: syntax error in tsquery") || strings.Contains(errText, "ERROR: no operand in tsquery") {
-				if startIdx := strings.IndexByte(errText, '"'); startIdx > 0 && startIdx+1 < len(errText) {
-					errText = errText[startIdx+1:]
-					if endIdx := strings.IndexByte(errText, '"'); endIdx > 0 && endIdx < len(errText) {
-						return errText[:endIdx], true
-					}
-				} else {
-					// more generic error.
-					return "invalid input syntax", true
-				}
-			}
-		}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return "", false
+	}
+	switch {
+	case pgErr.Code == sqlStateInvalidTextRepresentation:
+		return pgErr.Message, true
+	case pgErr.Code == sqlStateSyntaxErrorOrAccessRule &&
+		(strings.Contains(pgErr.Message, "tsquery") || strings.Contains(pgErr.Routine, "tsquery")):
+		return pgErr.Message, true
 	}
 
 	return "", false
 }
 
-// IsErrColumnNotExists reports whether the error is caused because the "col" defined
-// in a select query was not exists in a row.
-// There is no a typed error available in the driver itself.
+// IsErrColumnNotExists reports whether the error is caused because the
+// "col" referenced in a query does not exist (SQLSTATE 42703). It cross
+// checks pgErr.ColumnName / Message against col so the caller can still
+// tell which specific column was missing when several are referenced.
 func IsErrColumnNotExists(err error, col string) bool {
-	if err == nil {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != sqlStateUndefinedColumn {
 		return false
 	}
 
-	errText := fmt.Sprintf(`column "%s" does not exist`, col)
-	return strings.Contains(err.Error(), errText)
+	if pgErr.ColumnName == col {
+		return true
+	}
+	return strings.Contains(pgErr.Message, fmt.Sprintf(`column "%s" does not exist`, col))
 }

@@ -226,7 +226,15 @@ func (r *Repository[T]) Upsert(ctx context.Context, value *T, forceOnConflictExp
 
 // UpsertReturning inserts a record with ON CONFLICT semantics and scans
 // all returned columns back into value.
+// When retry is enabled and not inside an existing transaction, the upsert
+// runs in a retriable transaction.
 func (r *Repository[T]) UpsertReturning(ctx context.Context, value *T, forceOnConflictExpr string) error {
+	if r.retryEnabled && !r.db.IsTransaction() {
+		return r.db.InTransactionWithRetry(ctx, r.retry, func(tx *DB) error {
+			txRepo := &Repository[T]{db: tx, table: r.table}
+			return txRepo.UpsertReturning(ctx, value, forceOnConflictExpr)
+		})
+	}
 	structValue := schemapkg.IndirectValue(value)
 	primaryKey, ok := r.table.FindPrimaryKey()
 	if !ok {
