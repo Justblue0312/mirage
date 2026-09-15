@@ -348,6 +348,72 @@ func TestRetry_Exhaustion(t *testing.T) {
 	t.Logf("got expected error: %v", err)
 }
 
+// TestUpsertReturning_WithRetry locks in the fix for UpsertReturning: unlike
+// every sibling write method (Insert, InsertReturning, Update,
+// UpdateReturning, UpdateOnlyColumns, UpdateExceptColumns, Upsert),
+// UpsertReturning did not check r.retryEnabled/r.db.IsTransaction() and
+// wrap itself in InTransactionWithRetry, so a repository configured with
+// WithRetry silently never retried serialization failures or deadlocks for
+// this one method. This test exercises the happy path end-to-end (a real
+// serialization-failure trigger requires two concurrent connections and
+// SERIALIZABLE isolation racing each other, which is exercised indirectly
+// by TestRetry_IsolationLevel/TestRetry_Success for InsertReturning); the
+// key regression this guards is that UpsertReturning must not panic or
+// behave differently now that it also opens its own retriable transaction
+// when not already inside one, and must still populate returned columns.
+func TestUpsertReturning_WithRetry(t *testing.T) {
+	dsn := testMirageDSN(t)
+	ctx := context.Background()
+
+	db, err := mirage.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+
+	setupWidgetsTable(t, db)
+	if _, err := db.Exec(ctx, `ALTER TABLE widgets_repo_test ADD CONSTRAINT widgets_repo_test_name_key UNIQUE (name)`); err != nil {
+		t.Fatalf("adding unique constraint: %v", err)
+	}
+
+	retryRepo := mirage.NewRepository[widget](db, mirage.WithRetry(mirage.RetryOptions{
+		MaxAttempts: 3,
+		BaseDelay:   10 * time.Millisecond,
+	}))
+
+	w := &widget{Name: "upsert-retry"}
+	if err := retryRepo.UpsertReturning(ctx, w, "ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name"); err != nil {
+		t.Fatalf("UpsertReturning (insert path): %v", err)
+	}
+	if w.ID == 0 {
+		t.Fatal("expected non-zero id after UpsertReturning insert")
+	}
+	firstID := w.ID
+
+	// Upsert again with the same natural key: should hit the ON CONFLICT
+	// path and return the same row, still going through the retry-wrapped
+	// transaction now that the fix wires WithRetry into UpsertReturning.
+	w2 := &widget{Name: "upsert-retry"}
+	if err := retryRepo.UpsertReturning(ctx, w2, "ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name"); err != nil {
+		t.Fatalf("UpsertReturning (conflict path): %v", err)
+	}
+	if w2.ID != firstID {
+		t.Fatalf("expected conflict path to return the same row id %d, got %d", firstID, w2.ID)
+	}
+
+	// Also verify that calling it from inside an existing transaction still
+	// runs directly in that transaction rather than opening a nested retry
+	// transaction (mirrors the documented behavior of every sibling method).
+	err = db.InTransaction(ctx, func(tx *mirage.DB) error {
+		txRepo := mirage.NewRepository[widget](tx, mirage.WithRetry(mirage.RetryOptions{MaxAttempts: 3}))
+		w3 := &widget{Name: "upsert-retry-in-tx"}
+		return txRepo.UpsertReturning(ctx, w3, "ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name")
+	})
+	if err != nil {
+		t.Fatalf("UpsertReturning inside existing transaction: %v", err)
+	}
+}
+
 func TestRetry_IsolationLevel(t *testing.T) {
 	dsn := testMirageDSN(t)
 	ctx := context.Background()

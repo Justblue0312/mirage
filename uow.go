@@ -91,21 +91,34 @@ func (u *pgUnitOfWork) DoWithOptions(ctx context.Context, opts pgx.TxOptions, fn
 func (u *pgUnitOfWork) runTx(ctx context.Context, tx pgx.Tx, fn func(ctx context.Context) error) (err error) {
 	txCtx := context.WithValue(ctx, ctxKey{}, tx)
 
+	// Rollback/Commit use a background context, not ctx, so that a caller's
+	// canceled context (e.g. an HTTP request timeout or a client hangup)
+	// cannot prevent cleanup. This mirrors db.go's InTransaction, which
+	// does the same thing for the same reason (see its comment). Passing
+	// the original, possibly-canceled ctx here -- as this function
+	// previously did despite its own comment saying otherwise -- means
+	// pgx can fail Rollback/Commit immediately without ever talking to the
+	// server, leaving the transaction open server-side and the pooled
+	// connection unreleased until the pool eventually notices and discards
+	// it, i.e. under request-cancellation load this leaks connections
+	// faster than the pool can replace them.
+	bgCtx := context.Background()
+
 	defer func() {
 		if p := recover(); p != nil {
-			_ = tx.Rollback(ctx) // best-effort; ctx (not txCtx) — must survive a cancelled parent
+			_ = tx.Rollback(bgCtx) // best-effort; must survive a cancelled parent
 			panic(p)
 		}
 	}()
 
 	if err = fn(txCtx); err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+		if rbErr := tx.Rollback(bgCtx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 			return fmt.Errorf("uow: %w (rollback failed: %v)", err, rbErr)
 		}
 		return err
 	}
 
-	if err = tx.Commit(ctx); err != nil {
+	if err = tx.Commit(bgCtx); err != nil {
 		return fmt.Errorf("uow: commit: %w", err)
 	}
 	return nil

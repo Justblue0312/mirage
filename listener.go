@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -106,16 +105,19 @@ func notifyNative[T string | []byte](ctx context.Context, db *DB, channel string
 func UnmarshalNotification[T any](n *Notification) (T, error) {
 	var payload T
 
-	b := stringToBytes(n.Payload)
-
-	err := json.Unmarshal(b, &payload)
+	// A plain conversion (which copies) is used here rather than an unsafe
+	// zero-copy cast: this runs once per notification, not in a hot loop,
+	// so the copy is not a meaningful cost. Go strings are assumed
+	// immutable throughout the runtime and standard library; aliasing a
+	// string's backing array as a []byte is undefined behavior the moment
+	// anything downstream (a custom UnmarshalJSON, a future stdlib change,
+	// etc.) writes through that slice, which would silently corrupt the
+	// original string (including possibly an interned/shared one). That
+	// risk isn't worth taking for an optimization that doesn't matter here.
+	err := json.Unmarshal([]byte(n.Payload), &payload)
 	if err != nil {
 		return payload, err
 	}
 
 	return payload, nil
-}
-
-func stringToBytes(s string) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s)) //nolint:gosec // intentional unsafe for zero-copy conversion
 }
